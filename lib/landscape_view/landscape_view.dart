@@ -44,21 +44,20 @@ class LandscapeView extends StatelessWidget {
             final pageWidth = MediaQuery.widthOf(context);
             final pageHight = MediaQuery.heightOf(context);
 
-            return ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: pageWidth * 0.03,
-                  sigmaY: pageHight * 0.03,
-                ),
-                child: ValueListenableBuilder(
-                  valueListenable: layersManager.backgroundChangeNotifier,
-                  builder: (context, value, child) {
-                    return AnimatedContainer(
-                      duration: Duration(milliseconds: 500),
-                      color: backgroundCoverArtColor.withAlpha(180),
-                    );
-                  },
-                ),
+            return BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: pageWidth * 0.03,
+                sigmaY: pageHight * 0.03,
+              ),
+              child: ValueListenableBuilder(
+                valueListenable: layersManager.backgroundChangeNotifier,
+                builder: (context, value, child) {
+                  return AnimatedContainer(
+                    duration: Duration(milliseconds: 300),
+                    curve: Curves.easeInOutCubic,
+                    color: backgroundCoverArtColor.withAlpha(180),
+                  );
+                },
               ),
             );
           },

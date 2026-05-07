@@ -74,13 +74,11 @@ class LayersManager {
                         color: layerInfo.backgroundCoverArtColor,
                       ),
 
-                      ClipRect(
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                          child: Container(
-                            color: layerInfo.backgroundCoverArtColor.withAlpha(
-                              180,
-                            ),
+                      BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                        child: Container(
+                          color: layerInfo.backgroundCoverArtColor.withAlpha(
+                            180,
                           ),
                         ),
                       ),

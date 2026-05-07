@@ -430,49 +430,57 @@ class LyricLineWidget extends StatelessWidget {
 
                   fontSize += fontSizeOffset;
 
-                  return Column(
-                    crossAxisAlignment: expanded ? .start : .center,
-                    children: [
-                      if (isCurrent && isKaraoke)
-                        ValueListenableBuilder(
-                          valueListenable: updateLyricsNotifier,
-                          builder: (context, value, child) {
-                            return KaraokeText(
-                              key: UniqueKey(),
-                              line: line,
-                              position: audioHandler.getPosition(),
-                              fontSize: fontSize,
-                              expanded: expanded,
-                            );
-                          },
-                        )
-                      else
-                        Text(
-                          line.text,
-                          textAlign: expanded ? .start : .center,
-                          style: TextStyle(
-                            fontSize: fontSize,
-                            fontWeight: .bold,
-                            color: isCurrent
-                                ? lyricsPageHighlightTextColor.value
-                                : lyricsPageForegroundColor.value.withAlpha(
-                                    128,
-                                  ),
-                          ),
-                        ),
-                      for (final translate in line.translates)
-                        Text(
-                          translate,
-                          textAlign: expanded ? .start : .center,
-                          style: TextStyle(
-                            fontSize: fontSize - 8,
-                            fontWeight: .bold,
-                            color: lyricsPageForegroundColor.value.withAlpha(
-                              128,
+                  return TweenAnimationBuilder<double>(
+                    tween: Tween(
+                      begin: fontSize,
+                      end: isCurrent ? fontSize * 1.1 : fontSize,
+                    ),
+                    duration: Duration(milliseconds: 300),
+                    builder: (context, size, child) {
+                      return Column(
+                        crossAxisAlignment: expanded ? .start : .center,
+                        children: [
+                          if (isCurrent && isKaraoke)
+                            ValueListenableBuilder(
+                              valueListenable: updateLyricsNotifier,
+                              builder: (context, value, child) {
+                                return KaraokeText(
+                                  key: UniqueKey(),
+                                  line: line,
+                                  position: audioHandler.getPosition(),
+                                  fontSize: size,
+                                  expanded: expanded,
+                                );
+                              },
+                            )
+                          else
+                            Text(
+                              line.text,
+                              textAlign: expanded ? .start : .center,
+                              style: TextStyle(
+                                fontSize: size,
+                                fontWeight: .bold,
+                                color: isCurrent
+                                    ? lyricsPageHighlightTextColor.value
+                                    : lyricsPageForegroundColor.value.withAlpha(
+                                        128,
+                                      ),
+                              ),
                             ),
-                          ),
-                        ),
-                    ],
+                          for (final translate in line.translates)
+                            Text(
+                              translate,
+                              textAlign: expanded ? .start : .center,
+                              style: TextStyle(
+                                fontSize: size - (expanded ? 8 : 4),
+                                fontWeight: .bold,
+                                color: lyricsPageForegroundColor.value
+                                    .withAlpha(128),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   );
                 },
               );

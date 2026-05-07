@@ -293,44 +293,47 @@ class _TitleBarState extends State<TitleBar> {
               borderRadius: .circular(10),
             ),
             clipBehavior: .antiAlias,
-            child: InkWell(
-              focusNode: inkwellNode,
-              onTap: isTV ? () {} : null,
-              child: TextField(
-                focusNode: searchFieldNode,
-                controller: widget.textController,
-                style: TextStyle(fontSize: 14, color: textColor.value),
-                onTapOutside: (event) {
-                  searchFieldNode.unfocus();
-                },
-                decoration: InputDecoration(
-                  hint: Text(
-                    widget.hintText!,
-                    style: TextStyle(fontSize: 14, color: textColor.value),
+            child: AnimatedContainer(
+              duration: Duration(milliseconds: 300),
+              curve: Curves.easeInOutCubic,
+              color: searchFieldColor.value,
+              child: InkWell(
+                focusNode: inkwellNode,
+                onTap: isTV ? () {} : null,
+                child: TextField(
+                  focusNode: searchFieldNode,
+                  controller: widget.textController,
+                  style: TextStyle(fontSize: 14, color: textColor.value),
+                  onTapOutside: (event) {
+                    searchFieldNode.unfocus();
+                  },
+                  decoration: InputDecoration(
+                    hint: Text(
+                      widget.hintText!,
+                      style: TextStyle(fontSize: 14, color: textColor.value),
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                    prefixIcon: Icon(Icons.search, color: iconColor.value),
+                    suffixIcon: ValueListenableBuilder(
+                      valueListenable: displayCancelNotifier,
+                      builder: (context, value, child) {
+                        return value
+                            ? IconButton(
+                                onPressed: () {
+                                  widget.textController!.clear();
+                                },
+                                icon: Icon(
+                                  Icons.close,
+                                  size: 20,
+                                  color: iconColor.value,
+                                ),
+                              )
+                            : SizedBox.shrink();
+                      },
+                    ),
+                    hoverColor: Colors.transparent,
+                    border: OutlineInputBorder(borderSide: BorderSide.none),
                   ),
-                  contentPadding: EdgeInsets.zero,
-                  prefixIcon: Icon(Icons.search, color: iconColor.value),
-                  suffixIcon: ValueListenableBuilder(
-                    valueListenable: displayCancelNotifier,
-                    builder: (context, value, child) {
-                      return value
-                          ? IconButton(
-                              onPressed: () {
-                                widget.textController!.clear();
-                              },
-                              icon: Icon(
-                                Icons.close,
-                                size: 20,
-                                color: iconColor.value,
-                              ),
-                            )
-                          : SizedBox.shrink();
-                    },
-                  ),
-                  filled: true,
-                  fillColor: searchFieldColor.value,
-                  hoverColor: Colors.transparent,
-                  border: OutlineInputBorder(borderSide: BorderSide.none),
                 ),
               ),
             ),
