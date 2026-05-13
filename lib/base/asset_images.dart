@@ -13,6 +13,7 @@ const AssetImage deleteImage = AssetImage('assets/images/delete.png');
 const AssetImage desktopLyricsImage = AssetImage(
   'assets/images/desktop_lyrics.png',
 );
+const AssetImage embyImage = AssetImage('assets/images/emby.png');
 const AssetImage equalizerImage = AssetImage('assets/images/equalizer.png');
 const AssetImage exportLogImage = AssetImage('assets/images/export_log.png');
 const AssetImage folderImage = AssetImage('assets/images/folder.png');
@@ -66,6 +67,7 @@ const AssetImage reverseImage = AssetImage('assets/images/reverse.png');
 const AssetImage rewindImage = AssetImage('assets/images/rewind.png');
 const AssetImage selectImage = AssetImage('assets/images/select.png');
 const AssetImage sequenceImage = AssetImage('assets/images/sequence.png');
+const AssetImage serverImage = AssetImage('assets/images/server.png');
 const AssetImage settingImage = AssetImage('assets/images/setting.png');
 const AssetImage shuffleImage = AssetImage('assets/images/shuffle.png');
 const AssetImage songsImage = AssetImage('assets/images/songs.png');
@@ -76,3 +78,4 @@ const AssetImage timerImage = AssetImage('assets/images/timer.png');
 const AssetImage topArrowImage = AssetImage('assets/images/top_arrow.png');
 const AssetImage unmaximizeImage = AssetImage('assets/images/unmaximize.png');
 const AssetImage vibrationImage = AssetImage('assets/images/vibration.png');
+const AssetImage webdavImage = AssetImage('assets/images/webdav.png');

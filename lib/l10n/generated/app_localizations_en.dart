@@ -462,6 +462,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connect2Emby => 'Connect to Emby';
 
   @override
+  String get connect2Server => 'Connect to Server';
+
+  @override
   String get username => 'Username';
 
   @override

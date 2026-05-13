@@ -57,12 +57,12 @@ class SettingsList extends StatelessWidget {
                   subtitle: Text(
                     l10n.settingCount(
                       isTV
-                          ? 13
+                          ? 12
                           : Platform.isAndroid
-                          ? 15
-                          : Platform.isIOS
                           ? 14
-                          : 13,
+                          : Platform.isIOS
+                          ? 13
+                          : 12,
                     ),
                     style: TextStyle(fontSize: 12),
                   ),
@@ -103,9 +103,9 @@ class SettingsList extends StatelessWidget {
         sliverBox(
           paddingIfNeed(isLandscape, selectMusicFoldersListTile(context, l10n)),
         ),
-        sliverBox(paddingIfNeed(isLandscape, navidromeListTile(context, l10n))),
-        sliverBox(paddingIfNeed(isLandscape, webdavListTile(context, l10n))),
-        sliverBox(paddingIfNeed(isLandscape, embyListTile(context, l10n))),
+        sliverBox(
+          paddingIfNeed(isLandscape, connect2ServerListTile(context, l10n)),
+        ),
 
         sliverBox(paddingIfNeed(isLandscape, reloadListTile(context, l10n))),
 
@@ -192,9 +192,38 @@ class SettingsList extends StatelessWidget {
     );
   }
 
+  Widget connect2ServerListTile(BuildContext context, AppLocalizations l10n) {
+    return ListTile(
+      leading: ImageIcon(serverImage, size: iconSize),
+      title: Text(l10n.connect2Server),
+      onTap: () {
+        showAnimationDialog(
+          context: context,
+          child: SizedBox(
+            width: 300,
+            height: 300,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10.0,
+                vertical: 15,
+              ),
+              child: Column(
+                children: [
+                  webdavListTile(context, l10n),
+                  navidromeListTile(context, l10n),
+                  embyListTile(context, l10n),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget navidromeListTile(BuildContext context, AppLocalizations l10n) {
     return ListTile(
-      leading: ImageIcon(navidromeImage, size: iconSize),
+      leading: Image(image: navidromeImage, width: 25, height: 25),
       title: Text(l10n.connect2Navidrome),
       onTap: () {
         final baseUrlTmp = TextEditingController(
@@ -325,7 +354,8 @@ class SettingsList extends StatelessWidget {
 
   Widget webdavListTile(BuildContext context, AppLocalizations l10n) {
     return ListTile(
-      leading: ImageIcon(navidromeImage, size: iconSize),
+      leading: Image(image: webdavImage, width: 25, height: 25),
+
       title: Text(l10n.connect2WebDAV),
       onTap: () {
         final baseUrlTmp = TextEditingController(
@@ -446,7 +476,8 @@ class SettingsList extends StatelessWidget {
 
   Widget embyListTile(BuildContext context, AppLocalizations l10n) {
     return ListTile(
-      leading: ImageIcon(navidromeImage, size: iconSize),
+      leading: Image(image: embyImage, width: 25, height: 25),
+
       title: Text(l10n.connect2Emby),
       onTap: () {
         final baseUrlTmp = TextEditingController(

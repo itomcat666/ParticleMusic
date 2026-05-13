@@ -188,6 +188,7 @@
   "connect2Navidrome": "Connect to Navidrome",
   "connect2WebDAV": "Connect to WebDAV",
   "connect2Emby": "Connect to Emby",
+  "connect2Server": "Connect to Server",
   "username": "Username",
   "password": "Password",
   "exportLog": "Export Log",

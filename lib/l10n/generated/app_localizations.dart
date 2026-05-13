@@ -980,6 +980,12 @@ abstract class AppLocalizations {
   /// **'Connect to Emby'**
   String get connect2Emby;
 
+  /// No description provided for @connect2Server.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to Server'**
+  String get connect2Server;
+
   /// No description provided for @username.
   ///
   /// In en, this message translates to:

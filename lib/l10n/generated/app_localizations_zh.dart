@@ -462,6 +462,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connect2Emby => '连接到Emby';
 
   @override
+  String get connect2Server => '连接到服务器';
+
+  @override
   String get username => '账号';
 
   @override
