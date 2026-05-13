@@ -4,6 +4,7 @@ import 'package:particle_music/base/utils/interaction.dart';
 import 'package:particle_music/base/data/artist_album.dart';
 import 'package:particle_music/base/utils/color_manager.dart';
 import 'package:particle_music/base/asset_images.dart';
+import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
 import 'package:particle_music/base/widgets/my_sheet.dart';
 import 'package:particle_music/base/widgets/playlist_widgets.dart';
@@ -176,36 +177,22 @@ class SongListTile extends StatelessWidget {
                               Navigator.pop(context);
 
                               if (isLibrary) {
-                                final item = library
-                                    .songListManager
-                                    .localSongList
-                                    .removeAt(index);
-                                library.songListManager.localSongList.insert(
-                                  0,
-                                  item,
-                                );
-                                library.update();
+                                final targetSongList = playlist!.songListManager
+                                    .getSongList2(song.sourceType);
+
+                                final item = targetSongList.removeAt(index);
+                                targetSongList.insert(0, item);
+                                library.update(item.sourceType);
                               } else if (folder != null) {
                                 final item = folder!.songList.removeAt(index);
                                 folder!.songList.insert(0, item);
                                 folder!.update();
                               } else {
-                                if (song.sourceType == .navidrome) {
-                                  final item = playlist!
-                                      .songListManager
-                                      .navidromeSongList
-                                      .removeAt(index);
-                                  playlist!.songListManager.navidromeSongList
-                                      .insert(0, item);
-                                } else {
-                                  final item = playlist!
-                                      .songListManager
-                                      .localSongList
-                                      .removeAt(index);
-                                  playlist!.songListManager.localSongList
-                                      .insert(0, item);
-                                }
-                                playlist!.update();
+                                final targetSongList = playlist!.songListManager
+                                    .getSongList2(song.sourceType);
+                                final item = targetSongList.removeAt(index);
+                                targetSongList.insert(0, item);
+                                playlist!.update(getBitMask(song.sourceType));
                               }
                             },
                           ),

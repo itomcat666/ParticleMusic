@@ -20,6 +20,21 @@ class SongListManager {
 
   final sourceTypeNotifier = ValueNotifier(SourceType.local);
 
+  ValueNotifier<int> changeNotifier = ValueNotifier(0);
+
+  SongListManager() {
+    localChangeNotifier.addListener(_notify);
+    webdavChangeNotifier.addListener(_notify);
+    navidromeChangeNotifier.addListener(_notify);
+    embyChangeNotifier.addListener(_notify);
+
+    sourceTypeNotifier.addListener(_notify);
+  }
+
+  void _notify() {
+    changeNotifier.value++;
+  }
+
   void resetSourceType() {
     if (localSongList.isNotEmpty) {
       sourceTypeNotifier.value = .local;

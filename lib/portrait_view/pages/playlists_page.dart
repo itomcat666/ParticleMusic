@@ -39,18 +39,12 @@ class PlaylistsPage extends StatelessWidget {
                 visualDensity: const VisualDensity(horizontal: 0, vertical: -1),
 
                 leading: ValueListenableBuilder(
-                  valueListenable: playlist.changeNotifier,
+                  valueListenable: playlist.songListManager.changeNotifier,
                   builder: (_, _, _) {
-                    return ValueListenableBuilder(
-                      valueListenable:
-                          playlist.songListManager.sourceTypeNotifier,
-                      builder: (context, value, child) {
-                        return CoverArtWidget(
-                          size: 50,
-                          borderRadius: 5,
-                          song: playlist.getCoverSong(),
-                        );
-                      },
+                    return CoverArtWidget(
+                      size: 50,
+                      borderRadius: 5,
+                      song: playlist.getCoverSong(),
                     );
                   },
                 ),
@@ -62,7 +56,7 @@ class PlaylistsPage extends StatelessWidget {
                   maxFontSize: 15,
                 ),
                 subtitle: ValueListenableBuilder(
-                  valueListenable: playlist.changeNotifier,
+                  valueListenable: playlist.songListManager.changeNotifier,
                   builder: (_, _, _) {
                     return Text(l10n.songCount(playlist.totalCount));
                   },

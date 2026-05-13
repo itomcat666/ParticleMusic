@@ -13,3 +13,16 @@ String getSourceTypeName(AppLocalizations l10n, SourceType sourceType) {
       return 'Emby';
   }
 }
+
+int getBitMask(SourceType sourceType) {
+  switch (sourceType) {
+    case .local:
+      return 1;
+    case .webdav:
+      return 2;
+    case .navidrome:
+      return 4;
+    default:
+      return 8;
+  }
+}

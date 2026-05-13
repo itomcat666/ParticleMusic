@@ -512,27 +512,26 @@ class Library {
     );
   }
 
-  void shuffle() {
-    songListManager.localSongList.shuffle();
-    update();
+  void shuffle(SourceType sourceType) {
+    if (sourceType == .local) {
+      songListManager.localSongList.shuffle();
+    } else {
+      songListManager.webdavSongList.shuffle();
+    }
+
+    update(sourceType);
   }
 
-  Future<void> update() async {
-    await layersManager.updateBackground();
-    songListManager.localChangeNotifier.value++;
-    await _saveLocalSongIdList();
-  }
+  Future<void> update(SourceType sourceType) async {
+    if (sourceType == .local) {
+      songListManager.localChangeNotifier.value++;
+      _saveLocalSongIdList();
+    } else {
+      songListManager.webdavChangeNotifier.value++;
+      _saveWebdavSongIdList();
+    }
 
-  Future<void> updateLocal() async {
-    await layersManager.updateBackground();
-    songListManager.localChangeNotifier.value++;
-    await _saveLocalSongIdList();
-  }
-
-  Future<void> updateWebdav() async {
-    await layersManager.updateBackground();
-    songListManager.localChangeNotifier.value++;
-    await _saveLocalSongIdList();
+    layersManager.updateBackground();
   }
 
   void clear() {

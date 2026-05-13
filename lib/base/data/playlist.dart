@@ -7,6 +7,7 @@ import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
 import 'package:particle_music/base/utils/io.dart';
 import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/data/library.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
@@ -140,8 +141,6 @@ class Playlist {
 
   late File settingFile;
 
-  ValueNotifier<int> changeNotifier = ValueNotifier(0);
-
   SongListManager songListManager = SongListManager();
 
   late bool isFavorite;
@@ -244,72 +243,80 @@ class Playlist {
   }
 
   Future<void> add(List<MyAudioMetadata> songList) async {
+    int bitMask = 0;
+
     for (MyAudioMetadata song in songList) {
-      switch (song.sourceType) {
-        case .local:
-          if (songListManager.localSongList.contains(song)) {
-            continue;
-          }
-          songListManager.localSongList.insert(0, song);
-          break;
-        case .webdav:
-          break;
-        case .navidrome:
-          if (songListManager.navidromeSongList.contains(song)) {
-            continue;
-          }
-          songListManager.navidromeSongList.insert(0, song);
-          break;
-        default:
-          break;
+      final targetSongList = songListManager.getSongList2(song.sourceType);
+      if (targetSongList.contains(song)) {
+        continue;
       }
+      targetSongList.insert(0, song);
+
       if (isFavorite) {
         song.isFavoriteNotifier.value = true;
       }
+
+      bitMask |= getBitMask(song.sourceType);
     }
-    await update();
+    await update(bitMask);
   }
 
   Future<void> remove(List<MyAudioMetadata> songList) async {
+    int bitMask = 0;
     for (MyAudioMetadata song in songList) {
-      if (song.sourceType == .navidrome) {
-        songListManager.navidromeSongList.remove(song);
-      } else {
-        songListManager.localSongList.remove(song);
-      }
+      final targetSongList = songListManager.getSongList2(song.sourceType);
+      targetSongList.remove(song);
+
       if (isFavorite) {
         song.isFavoriteNotifier.value = false;
       }
+
+      bitMask |= getBitMask(song.sourceType);
     }
-    await update();
+    await update(bitMask);
   }
 
-  Future<void> update() async {
-    // await file.writeAsString(
-    //   jsonEncode(songListManager.localSongList.map((e) => e.id).toList()),
-    // );
-    // if (isFavorite) {
-    //   await navidromeClient?.unstarAllSongs();
-    //   await navidromeClient?.starSongs(
-    //     songListManager.navidromeSongList
-    //         .map((e) => e.id)
-    //         .toList()
-    //         .reversed
-    //         .toList(),
-    //   );
-    // } else if (navidromeId != null ||
-    //     songListManager.navidromeSongList.isNotEmpty) {
-    //   if (navidromeId != null) {
-    //     await navidromeClient!.deletePlaylist(navidromeId!);
-    //   }
-    //   navidromeId = await navidromeClient!.createPlaylistAndGetId(name);
-    //   if (navidromeId != null) {
-    //     await navidromeClient!.addSongsToPlaylist(
-    //       navidromeId!,
-    //       songListManager.navidromeSongList.map((e) => e.id).toList(),
-    //     );
-    //   }
-    // }
+  Future<void> update(int bitMask) async {
+    if ((bitMask & 1) == 1) {
+      await localFile.writeAsString(
+        jsonEncode(songListManager.localSongList.map((e) => e.id).toList()),
+      );
+    }
+
+    if ((bitMask & 2) == 2) {
+      if (webdavFile == null) {
+        setWebdavFile();
+      }
+      await webdavFile!.writeAsString(
+        jsonEncode(songListManager.webdavSongList.map((e) => e.id).toList()),
+      );
+    }
+
+    if ((bitMask & 4) == 4) {
+      if (isFavorite) {
+        await navidromeClient?.unstarAllSongs();
+        await navidromeClient?.starSongs(
+          songListManager.navidromeSongList
+              .map((e) => e.id)
+              .toList()
+              .reversed
+              .toList(),
+        );
+      } else {
+        if (navidromeId != null) {
+          await navidromeClient!.deletePlaylist(navidromeId!);
+        }
+        navidromeId = await navidromeClient!.createPlaylistAndGetId(name);
+        if (navidromeId != null) {
+          await navidromeClient!.addSongsToPlaylist(
+            navidromeId!,
+            songListManager.navidromeSongList.map((e) => e.id).toList(),
+          );
+        }
+      }
+    }
+
+    if ((bitMask & 8) == 8) {}
 
     if (songListManager.getSongList().isEmpty) {
       songListManager.resetSourceType();

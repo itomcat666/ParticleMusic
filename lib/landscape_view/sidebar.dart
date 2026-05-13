@@ -441,23 +441,20 @@ class Sidebar extends StatelessWidget {
       },
       child: sidebarItem(
         label: '_${playlist.name}',
-        leading: ListenableBuilder(
-          listenable: Listenable.merge([
-            playlist.changeNotifier,
-            playlist.songListManager.sourceTypeNotifier,
-          ]),
-          builder: (_, _) {
-            final displaySong = playlist.getCoverSong();
-            if (displaySong == null) {
+        leading: ValueListenableBuilder(
+          valueListenable: playlist.songListManager.changeNotifier,
+          builder: (_, _, _) {
+            final coverSong = playlist.getCoverSong();
+            if (coverSong == null) {
               return CoverArtWidget(size: 30, borderRadius: 3, song: null);
             }
             return ValueListenableBuilder(
-              valueListenable: displaySong.updateNotifier,
+              valueListenable: coverSong.updateNotifier,
               builder: (_, _, _) {
                 return CoverArtWidget(
                   size: 30,
                   borderRadius: 3,
-                  song: displaySong,
+                  song: coverSong,
                 );
               },
             );

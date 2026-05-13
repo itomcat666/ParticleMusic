@@ -3,6 +3,7 @@ import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/utils/color_manager.dart';
 import 'package:particle_music/base/asset_images.dart';
 import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/base/widgets/my_auto_size_text.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
 import 'package:particle_music/base/widgets/playlist_widgets.dart';
@@ -311,11 +312,11 @@ class SelectableSongListPageState extends State<SelectableSongListPage> {
                               currentSongListNotifier.value = songList;
 
                               if (isLibrary) {
-                                library.update();
+                                library.update(item.sourceType);
                               } else if (folder != null) {
                                 folder!.update();
                               } else {
-                                playlist!.update();
+                                playlist!.update(getBitMask(item.sourceType));
                               }
                             },
                             onReorderStart: (_) {

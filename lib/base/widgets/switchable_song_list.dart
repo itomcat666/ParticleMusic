@@ -100,35 +100,40 @@ class SwitchableSongList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder(
-      valueListenable: songListManager.sourceTypeNotifier,
+      valueListenable: songListManager.changeNotifier,
       builder: (context, value, child) {
+        final sourceType = songListManager.sourceTypeNotifier.value;
         return Stack(
           children: [
             if (songListManager.localSongList.isNotEmpty ||
                 songListManager.isEmpty)
               Visibility(
-                visible: value == .local,
+                key: ValueKey('local'),
+                visible: sourceType == .local,
                 maintainState: true,
                 child: isPanel ? panel(.local) : page(.local),
               ),
 
             if (songListManager.webdavSongList.isNotEmpty)
               Visibility(
-                visible: value == .webdav,
+                key: ValueKey('webdav'),
+                visible: sourceType == .webdav,
                 maintainState: true,
                 child: isPanel ? panel(.webdav) : page(.webdav),
               ),
 
             if (songListManager.navidromeSongList.isNotEmpty)
               Visibility(
-                visible: value == .navidrome,
+                key: ValueKey('navidrome'),
+                visible: sourceType == .navidrome,
                 maintainState: true,
                 child: isPanel ? panel(.navidrome) : page(.navidrome),
               ),
 
             if (songListManager.embySongList.isNotEmpty)
               Visibility(
-                visible: value == .emby,
+                key: ValueKey('emby'),
+                visible: sourceType == .emby,
                 maintainState: true,
                 child: isPanel ? panel(.emby) : page(.emby),
               ),
@@ -146,9 +151,7 @@ class SwitchableSongList extends StatelessWidget {
       isRanking: isRanking,
       isRecently: isRecently,
       sourceType: sourceType,
-      switchCallBack: songListManager.notEmptyCount >= 2
-          ? switchCallBack
-          : null,
+      switchCallBack: switchCallBack,
     );
   }
 
@@ -160,9 +163,7 @@ class SwitchableSongList extends StatelessWidget {
       isRanking: isRanking,
       isRecently: isRecently,
       sourceType: sourceType,
-      switchCallBack: songListManager.notEmptyCount >= 2
-          ? switchCallBack
-          : null,
+      switchCallBack: switchCallBack,
     );
   }
 }

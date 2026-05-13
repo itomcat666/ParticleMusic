@@ -6,7 +6,7 @@ import 'package:flutter/rendering.dart';
 import 'package:particle_music/base/utils/color_manager.dart';
 import 'package:particle_music/base/asset_images.dart';
 import 'package:particle_music/base/utils/interaction.dart';
-import 'package:particle_music/base/utils/name_map.dart';
+import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/base/widgets/my_auto_size_text.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
 import 'package:particle_music/base/widgets/selectable_song_list_page.dart';
@@ -186,7 +186,9 @@ class _SongListPageState extends BaseSongListState<SongListPage> {
                       l10n.durationAscending,
                       l10n.durationDescending,
                     ];
-                    if (isLibrary && sourceType == .local || folder != null) {
+                    if (isLibrary &&
+                            (sourceType == .local || sourceType == .webdav) ||
+                        folder != null) {
                       orderText.add(l10n.modifiedTimeAscending);
                       orderText.add(l10n.modifiedTimedescending);
                       orderText.add(l10n.randomizeTemp);
@@ -211,7 +213,7 @@ class _SongListPageState extends BaseSongListState<SongListPage> {
                                   }
                                   sortTypeNotifier.value = 0;
                                   if (isLibrary) {
-                                    library.shuffle();
+                                    library.shuffle(sourceType);
                                   } else {
                                     folder!.shuffle();
                                   }

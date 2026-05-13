@@ -17,9 +17,9 @@ import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/widgets/custom_text_field.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
-import 'package:particle_music/base/data/library.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
 import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/layer/layers_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class EditMetadata extends StatefulWidget {
@@ -334,20 +334,8 @@ class _EditMetadataState extends State<EditMetadata> {
         artistAlbumManager.updateArtistAlbum(song, originArtist, originAlbum);
 
         song.updateNotifier.value++;
-        if (song.sourceType == .local) {
-          await library.updateLocal();
-        } else {
-          await library.updateWebdav();
-        }
-        for (final folder
-            in song.sourceType == .local
-                ? library.localFolderList
-                : library.webdavFolderList) {
-          if (folder.id2Song[song.id] != null) {
-            await folder.update();
-            break;
-          }
-        }
+
+        layersManager.updateBackground();
       }
       if (context.mounted) {
         showCenterMessage(

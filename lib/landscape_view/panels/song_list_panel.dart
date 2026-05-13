@@ -11,7 +11,7 @@ import 'package:particle_music/base/data/artist_album.dart';
 import 'package:particle_music/base/utils/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/name_map.dart';
+import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
 import 'package:particle_music/base/widgets/playlist_widgets.dart';
@@ -162,11 +162,11 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                   songList.insert(newIndex, item);
 
                   if (isLibrary) {
-                    library.update();
+                    library.update(sourceType);
                   } else if (folder != null) {
                     folder!.update();
                   } else {
-                    playlist!.update();
+                    playlist!.update(getBitMask(sourceType));
                   }
                 },
               );
@@ -222,7 +222,7 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                     final buttonStyle = ElevatedButton.styleFrom(
                       backgroundColor: value,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(5),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       padding: EdgeInsets.all(10),
                     );
@@ -289,7 +289,7 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                           ),
                         ],
 
-                        if (widget.switchCallBack != null) ...[
+                        if (songListManager.notEmptyCount >= 2) ...[
                           SizedBox(width: 15),
                           ElevatedButton(
                             onPressed: () async {
@@ -317,7 +317,9 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                           ),
                         ],
 
-                        if (isLibrary && sourceType == .local ||
+                        if (isLibrary &&
+                                (sourceType == .local ||
+                                    sourceType == .webdav) ||
                             folder != null) ...[
                           SizedBox(width: 15),
                           ElevatedButton(
@@ -387,7 +389,7 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                                             }
                                             sortTypeNotifier.value = 0;
                                             if (isLibrary) {
-                                              library.shuffle();
+                                              library.shuffle(sourceType);
                                             } else {
                                               folder!.shuffle();
                                             }
@@ -403,7 +405,7 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                               );
                             },
                             style: buttonStyle,
-                            child: Text(l10n.more),
+                            child: Icon(Icons.sort),
                           ),
                         ],
                       ],
@@ -628,11 +630,11 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                 songList.insert(0, item);
 
                 if (isLibrary) {
-                  library.update();
+                  library.update(sourceType);
                 } else if (folder != null) {
                   folder!.update();
                 } else {
-                  playlist!.update();
+                  playlist!.update(getBitMask(item.sourceType));
                 }
               },
             ),
@@ -921,28 +923,21 @@ class _SongListPanel extends BaseSongListState<SongListPanel> {
                     Navigator.pop(context);
 
                     if (isLibrary) {
-                      final item = library.songListManager.localSongList
-                          .removeAt(index);
-                      library.songListManager.localSongList.insert(0, item);
-                      library.update();
+                      final targetSongList = playlist!.songListManager
+                          .getSongList2(sourceType);
+                      final item = targetSongList.removeAt(index);
+                      targetSongList.insert(0, item);
+                      library.update(sourceType);
                     } else if (folder != null) {
                       final item = folder!.songList.removeAt(index);
                       folder!.songList.insert(0, item);
                       folder!.update();
                     } else {
-                      if (song.sourceType == .navidrome) {
-                        final item = playlist!.songListManager.navidromeSongList
-                            .removeAt(index);
-                        playlist!.songListManager.navidromeSongList.insert(
-                          0,
-                          item,
-                        );
-                      } else {
-                        final item = playlist!.songListManager.localSongList
-                            .removeAt(index);
-                        playlist!.songListManager.localSongList.insert(0, item);
-                      }
-                      playlist!.update();
+                      final targetSongList = playlist!.songListManager
+                          .getSongList2(song.sourceType);
+                      final item = targetSongList.removeAt(index);
+                      targetSongList.insert(0, item);
+                      playlist!.update(getBitMask(sourceType));
                     }
                   },
                 ),

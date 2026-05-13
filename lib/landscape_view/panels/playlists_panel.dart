@@ -165,9 +165,10 @@ class _PlaylistsPanelState extends State<PlaylistsPanel> {
                           itemBuilder: (context, index) {
                             final playlist = playlists[index];
                             return ValueListenableBuilder(
-                              valueListenable: playlist.changeNotifier,
-                              builder: (context, value, child) {
-                                final displaySong = playlist.getCoverSong();
+                              valueListenable:
+                                  playlist.songListManager.changeNotifier,
+                              builder: (context, _, child) {
+                                final coverSong = playlist.getCoverSong();
                                 FocusNode focusNode = FocusNode();
 
                                 return StatefulBuilder(
@@ -190,21 +191,21 @@ class _PlaylistsPanelState extends State<PlaylistsPanel> {
                                             hoverColor: Colors.transparent,
                                             highlightColor: Colors.transparent,
 
-                                            child: displaySong == null
+                                            child: coverSong == null
                                                 ? CoverArtWidget(
                                                     size: coverArtWidth,
                                                     borderRadius: 10,
                                                     song: null,
                                                   )
                                                 : ValueListenableBuilder(
-                                                    valueListenable: displaySong
+                                                    valueListenable: coverSong
                                                         .updateNotifier,
                                                     builder: (_, _, _) {
                                                       return CoverArtWidget(
                                                         size: coverArtWidth,
                                                         borderRadius:
                                                             coverArtWidth / 10,
-                                                        song: displaySong,
+                                                        song: coverSong,
                                                       );
                                                     },
                                                   ),
