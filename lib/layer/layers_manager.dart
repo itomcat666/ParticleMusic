@@ -3,7 +3,9 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/data/artist_album.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/data/folder.dart';
+import 'package:particle_music/base/services/metadata_service.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/data/history.dart';
@@ -23,7 +25,7 @@ import 'package:particle_music/layer/songs_layer.dart';
 import 'package:particle_music/base/data/library.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
 import 'package:particle_music/base/data/playlist.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 
 final layersManager = LayersManager();
 MyAudioMetadata? backgroundSong;
@@ -208,8 +210,20 @@ class LayersManager {
     switchNotifier.value++;
   }
 
-  void removePlaylistLayer(Playlist playlist) async {
-    final layer = layerMap.remove('_${playlist.name}');
+  void removeLayer(dynamic target) async {
+    late String key;
+    if (target is Playlist) {
+      key = '_${target.name}';
+    } else if (target is Artist) {
+      key = 'artists${target.name}';
+    } else if (target is Album) {
+      key = 'albums${target.name}';
+    } else if (target is Folder) {
+      key = 'folders${target.id}';
+    } else {
+      assert(false);
+    }
+    final layer = layerMap.remove(key);
     if (layer == currentLayer) {
       await popLayer();
     }
@@ -220,38 +234,12 @@ class LayersManager {
     if (isMobile) {
       pageMap.remove(layer);
     }
-    layerHistory.removeWhere((item) => item == layer);
-    labelHistory.removeWhere((item) => item == '_${playlist.name}');
-  }
-
-  void removeArtistLayer(Artist artist) async {
-    final layer = layerMap.remove('artists${artist.name}');
-    if (layer == currentLayer) {
-      await popLayer();
+    for (int i = layerHistory.length - 1; i >= 0; i--) {
+      if (layerHistory[i] == layer) {
+        layerHistory.removeAt(i);
+        labelHistory.removeAt(i);
+      }
     }
-
-    await Future.delayed(Duration(milliseconds: 500));
-
-    if (isMobile) {
-      pageMap.remove(layer);
-    }
-    layerHistory.removeWhere((item) => item == layer);
-    labelHistory.removeWhere((item) => item == 'albums${artist.name}');
-  }
-
-  void removeAlbumLayer(Album album) async {
-    final layer = layerMap.remove('albums${album.name}');
-    if (layer == currentLayer) {
-      await popLayer();
-    }
-
-    await Future.delayed(Duration(milliseconds: 500));
-
-    if (isMobile) {
-      pageMap.remove(layer);
-    }
-    layerHistory.removeWhere((item) => item == layer);
-    labelHistory.removeWhere((item) => item == 'albums${album.name}');
   }
 
   void clear() {

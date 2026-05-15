@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/data/folder.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/asset_images.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
@@ -8,7 +8,7 @@ import 'package:particle_music/landscape_view/title_bar.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/data/library.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 import 'package:smooth_corner/smooth_corner.dart';
 
 class FoldersPanel extends StatelessWidget {
@@ -19,7 +19,14 @@ class FoldersPanel extends StatelessWidget {
     return Column(
       children: [
         TitleBar(),
-        Expanded(child: contentWidget(context)),
+        Expanded(
+          child: ValueListenableBuilder(
+            valueListenable: library.folderListChangeNotifier,
+            builder: (context, value, child) {
+              return contentWidget(context);
+            },
+          ),
+        ),
       ],
     );
   }
@@ -82,7 +89,7 @@ class FoldersPanel extends StatelessWidget {
                     .webdavFolderList[index - library.localFolderList.length];
               }
               return ValueListenableBuilder(
-                valueListenable: folder.updateNotifier,
+                valueListenable: folder.changeNotifier,
                 builder: (context, value, child) {
                   final displaySong = getFirstSong(folder.songList);
                   return SizedBox(

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/audio_handler.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/lyric.dart';
+import 'package:particle_music/base/services/lyric.dart';
 import 'package:particle_music/base/widgets/buttons.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/utils/dynamic_route.dart';
@@ -12,7 +12,7 @@ import 'package:particle_music/landscape_view/speaker.dart';
 import 'package:particle_music/landscape_view/volume_bar.dart';
 import 'package:particle_music/base/widgets/seekbar.dart';
 import 'package:particle_music/layer/lyrics_page_layer.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 import 'package:smooth_corner/smooth_corner.dart';
 
 FocusNode currentSongTileNode = FocusNode();

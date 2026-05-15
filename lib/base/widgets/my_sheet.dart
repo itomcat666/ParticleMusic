@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:smooth_corner/smooth_corner.dart';
 
 class MySheet extends StatelessWidget {

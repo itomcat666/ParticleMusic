@@ -6,7 +6,7 @@ import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/audio_handler.dart';
 
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/lyric.dart';
+import 'package:particle_music/base/services/lyric.dart';
 import 'package:particle_music/base/widgets/lyric_list_view.dart';
 import 'package:particle_music/base/extensions/window_controller_extension.dart';
 import 'package:smooth_corner/smooth_corner.dart';

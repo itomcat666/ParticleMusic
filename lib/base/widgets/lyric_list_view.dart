@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:particle_music/base/audio_handler.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
-import 'package:particle_music/base/utils/lyric.dart';
+import 'package:particle_music/base/services/lyric.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:smooth_corner/smooth_corner.dart';
 

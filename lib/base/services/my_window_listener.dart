@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:particle_music/base/utils/exit.dart';
+import 'package:particle_music/base/services/exit.dart';
 import 'package:particle_music/base/data/setting.dart';
 import 'package:particle_music/mini_view/mini_view.dart';
 import 'package:window_manager/window_manager.dart';

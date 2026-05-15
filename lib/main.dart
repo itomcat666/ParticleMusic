@@ -3,9 +3,9 @@ import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
-import 'package:particle_music/base/utils/logger.dart';
+import 'package:particle_music/base/services/logger.dart';
 import 'package:particle_music/landscape_view/desktop_lyrics.dart';
 import 'package:particle_music/base/extensions/window_controller_extension.dart';
 import 'package:particle_music/base/services/keyboard.dart';
@@ -148,6 +148,7 @@ Future<void> main() async {
       ),
     ),
   );
+
   logger.output('App start');
   if (!isMobile) {
     await initDesktopLyrics();

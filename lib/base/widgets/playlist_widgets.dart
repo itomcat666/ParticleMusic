@@ -1,10 +1,10 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/widgets/custom_text_field.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';

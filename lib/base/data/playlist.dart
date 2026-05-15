@@ -7,7 +7,7 @@ import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
 import 'package:particle_music/base/services/emby_client.dart';
 import 'package:particle_music/base/utils/path.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/data/library.dart';
@@ -69,7 +69,7 @@ class PlaylistManager {
       await _navidromeFile.readAsString(),
     );
     for (final map in navidromePlaylists) {
-      String id = map['id'];
+      String? id = map['id'];
       String name = map['name'];
       playlistsMap[name]!.navidromeId = id;
       playlistsMap[name]!.setNavidromeFile();
@@ -77,7 +77,7 @@ class PlaylistManager {
 
     List<dynamic> embyPlaylists = jsonDecode(await _embyFile.readAsString());
     for (final map in embyPlaylists) {
-      String id = map['id'];
+      String? id = map['id'];
       String name = map['name'];
       playlistsMap[name]!.embyId = id;
       playlistsMap[name]!.setEmbyFile();
@@ -94,30 +94,34 @@ class PlaylistManager {
         playlist.navidromeId = null;
         await playlist.navidromeFile?.delete();
       }
-      final navidromePlaylists = await navidromeClient!.getPlaylists();
-      for (final playlist in navidromePlaylists) {
-        String id = playlist['id'];
-        String name = playlist['name'];
-        if (playlistsMap[name] == null) {
-          addPlaylist(Playlist(name: name));
+      if (navidromeClient != null) {
+        final navidromePlaylists = await navidromeClient!.getPlaylists();
+        for (final playlist in navidromePlaylists) {
+          String id = playlist['id'];
+          String name = playlist['name'];
+          if (playlistsMap[name] == null) {
+            addPlaylist(Playlist(name: name));
+          }
+          playlistsMap[name]!.navidromeId = id;
+          playlistsMap[name]!.setNavidromeFile();
         }
-        playlistsMap[name]!.navidromeId = id;
-        playlistsMap[name]!.setNavidromeFile();
       }
     } else if (sourceType == .emby) {
       for (final playlist in playlists) {
         playlist.embyId = null;
         await playlist.embyFile?.delete();
       }
-      final embyPlaylists = await embyClient!.getPlaylists();
-      for (final playlist in embyPlaylists) {
-        String id = playlist['Id'];
-        String name = playlist['Name'];
-        if (playlistsMap[name] == null) {
-          addPlaylist(Playlist(name: name));
+      if (embyClient != null) {
+        final embyPlaylists = await embyClient!.getPlaylists();
+        for (final playlist in embyPlaylists) {
+          String id = playlist['Id'];
+          String name = playlist['Name'];
+          if (playlistsMap[name] == null) {
+            addPlaylist(Playlist(name: name));
+          }
+          playlistsMap[name]!.embyId = id;
+          playlistsMap[name]!.setEmbyFile();
         }
-        playlistsMap[name]!.embyId = id;
-        playlistsMap[name]!.setEmbyFile();
       }
     }
     for (final playlist in playlists) {
@@ -310,12 +314,16 @@ class Playlist {
   Future<void> sync(SourceType sourceType) async {
     songListManager.getSongList2(sourceType).clear();
     songListManager.getChangeNotifier2(sourceType).value++;
+    songListManager.resetSourceType();
+
     if (sourceType == .navidrome) {
       List<String> songIds = [];
-      if (isFavorite) {
-        songIds = await navidromeClient!.getFavoriteSongIds();
-      } else {
-        songIds = await navidromeClient!.getPlaylistSongIds(navidromeId!);
+      if (navidromeClient != null) {
+        if (isFavorite) {
+          songIds = await navidromeClient!.getFavoriteSongIds();
+        } else {
+          songIds = await navidromeClient!.getPlaylistSongIds(navidromeId!);
+        }
       }
       for (final songId in songIds) {
         final song = library.id2Song[songId];
@@ -327,10 +335,12 @@ class Playlist {
       await update(getBitMask(sourceType));
     } else if (sourceType == .emby) {
       List<String> songIds = [];
-      if (isFavorite) {
-        songIds = await embyClient!.getFavoriteSongIds();
-      } else if (embyId != null) {
-        songIds = await embyClient!.getPlaylistItems(embyId!);
+      if (embyClient != null) {
+        if (isFavorite) {
+          songIds = await embyClient!.getFavoriteSongIds();
+        } else if (embyId != null) {
+          songIds = await embyClient!.getPlaylistItems(embyId!);
+        }
       }
       for (final songId in songIds) {
         final song = library.id2Song[songId];
@@ -445,17 +455,19 @@ class Playlist {
         if (embyId != null) {
           await embyClient!.deletePlaylist(embyId!);
         }
-        embyId = await embyClient!.createPlaylist(
+        embyId = await embyClient?.createPlaylist(
           name: name,
           songIds: songListManager.embySongList.map((e) => e.id).toList(),
         );
       }
-      if (embyFile == null) {
-        setEmbyFile();
+      if (embyId != null) {
+        if (embyFile == null) {
+          setEmbyFile();
+        }
+        await embyFile!.writeAsString(
+          jsonEncode(songListManager.embySongList.map((e) => e.id).toList()),
+        );
       }
-      await embyFile!.writeAsString(
-        jsonEncode(songListManager.embySongList.map((e) => e.id).toList()),
-      );
     }
 
     if (songListManager.getSongList().isEmpty) {

@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/data/playlist.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/widgets/lyric_list_view.dart';
 import 'package:particle_music/base/data/artist_album.dart';
 import 'package:particle_music/base/app.dart';

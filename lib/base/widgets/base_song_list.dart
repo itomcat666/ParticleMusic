@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/data/artist_album.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/data/folder.dart';
 import 'package:particle_music/base/data/history.dart';
 import 'package:particle_music/base/data/library.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
 import 'package:particle_music/base/data/playlist.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
 
 abstract class BaseSongListWidget extends StatefulWidget {
@@ -131,7 +131,7 @@ abstract class BaseSongListState<T extends BaseSongListWidget>
     } else {
       songList = folder!.songList;
       sortTypeNotifier = folder!.sortTypeNotifier;
-      folder!.updateNotifier.addListener(updateSongList);
+      folder!.changeNotifier.addListener(updateSongList);
     }
     updateSongList();
     sortTypeNotifier.addListener(updateSongList);
@@ -145,7 +145,7 @@ abstract class BaseSongListState<T extends BaseSongListWidget>
           .getChangeNotifier2(sourceType)
           .removeListener(updateSongList);
     } else {
-      folder!.updateNotifier.removeListener(updateSongList);
+      folder!.changeNotifier.removeListener(updateSongList);
     }
 
     sortTypeNotifier.removeListener(updateSongList);

@@ -4,7 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:particle_music/base/app.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/data/loader.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/base/services/keyboard.dart';
 import 'package:particle_music/landscape_view/landscape_view.dart';
@@ -37,6 +38,42 @@ class _ViewEntryState extends State<ViewEntry> with WidgetsBindingObserver {
         songsFocusNode.requestFocus();
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showAnimationDialog(
+        context: context,
+        child: SizedBox(
+          width: 300,
+          height: 200,
+          child: Column(
+            mainAxisAlignment: .center,
+            children: [
+              Text('Do you need sync data?'),
+              SizedBox(height: 10),
+
+              Row(
+                mainAxisAlignment: .center,
+                children: [
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    child: Text(AppLocalizations.of(context).cancel),
+                  ),
+                  SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Loader.sync(15);
+                    },
+                    child: Text(AppLocalizations.of(context).confirm),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    });
   }
 
   @override

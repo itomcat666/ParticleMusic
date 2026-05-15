@@ -8,13 +8,15 @@ import 'package:particle_music/base/data/database.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
 import 'package:particle_music/base/extensions/metadata_extension.dart';
 import 'package:particle_music/base/services/emby_client.dart';
+import 'package:particle_music/base/services/metadata_service.dart';
+import 'package:particle_music/base/services/song_list_service.dart';
 import 'package:particle_music/base/services/webdav_client.dart';
 import 'package:particle_music/base/utils/path.dart';
 import 'package:particle_music/base/data/folder.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
 import 'package:particle_music/base/services/navidrome_client.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:pool/pool.dart';
 import 'package:uuid/uuid.dart';
 
 late Library library;
@@ -42,6 +44,7 @@ class Library {
   late final File _webdavFolderMapListFile;
   List<Folder> localFolderList = [];
   List<Folder> webdavFolderList = [];
+  final folderListChangeNotifier = ValueNotifier(0);
   String? iosFileProviderStorage;
 
   Library() {
@@ -157,6 +160,7 @@ class Library {
         continue;
       }
       folder.delete();
+      layersManager.removeLayer(folder);
     }
 
     if (isLocal) {
@@ -171,6 +175,7 @@ class Library {
       );
     }
 
+    folderListChangeNotifier.value++;
     return true;
   }
 
@@ -384,48 +389,141 @@ class Library {
     _saveSongIdList(sourceType);
   }
 
+  void _syncNotify(SourceType sourceType) {
+    songListManager.getChangeNotifier2(sourceType).value++;
+    songListManager.resetSourceType();
+    layersManager.updateBackground();
+  }
+
   Future<void> sync(SourceType sourceType) async {
-    id2Song.removeWhere((id, song) => song.sourceType == sourceType);
     songListManager.getSongList2(sourceType).clear();
     songListManager.getChangeNotifier2(sourceType).value++;
+    songListManager.resetSourceType();
 
     switch (sourceType) {
       case .local:
       case .webdav:
-        for (final folder
-            in sourceType == .local ? localFolderList : webdavFolderList) {
-          await folder.sync();
-          id2Song.addAll(folder.id2Song);
+        Map<String, DateTime> pathAndModified = {};
+        final folderList = sourceType == .local
+            ? localFolderList
+            : webdavFolderList;
+
+        for (final folder in folderList) {
+          folder.songList.clear();
+          folder.changeNotifier.value++;
+          await folder.setFileAndModified();
+          pathAndModified.addAll(folder.pathAndModified);
         }
 
-        await syncSongList(
-          _getSongIdListFile(sourceType),
-          songListManager.getSongList2(sourceType),
-          Map.fromEntries(
-            id2Song.entries.where((e) => e.value.sourceType == sourceType),
-          ),
+        final List<dynamic> songIdList = jsonDecode(
+          await _getSongIdListFile(sourceType).readAsString(),
         );
 
+        final pool = Pool(8);
+
+        final tasks = <Future>[];
+
+        Set<String> validId = {};
+
+        Future<void> syncOne(String id, String path, DateTime modified) async {
+          final song = await syncSong(id, path, modified);
+          if (song != null) {
+            validId.add(id);
+            songListManager.getSongList2(sourceType).add(song);
+            if (validId.length % 50 == 0) {
+              _syncNotify(sourceType);
+            }
+          }
+        }
+
+        for (final id in songIdList) {
+          String path = id;
+
+          if (sourceType == .local) {
+            if (Platform.isIOS) {
+              path = revertIOSPath(path);
+            }
+            final modified = pathAndModified.remove(path);
+            if (modified != null) {
+              await syncOne(id, path, modified);
+            }
+          } else {
+            tasks.add(
+              pool.withResource(() async {
+                final modified = pathAndModified.remove(path);
+                if (modified != null) {
+                  await syncOne(id, path, modified);
+                }
+              }),
+            );
+          }
+        }
+
+        if (sourceType == .webdav) {
+          await Future.wait(tasks);
+        }
+
+        for (final entry in pathAndModified.entries) {
+          String path = entry.key;
+          String id = path;
+
+          if (sourceType == .local) {
+            if (Platform.isIOS) {
+              id = convertIOSPath(path);
+            }
+            await syncOne(id, path, entry.value);
+          } else {
+            id = Uri.parse(webdavClient!.baseUrl).resolve(path).toString();
+            id = Uri.decodeFull(id);
+            tasks.add(pool.withResource(() => syncOne(id, id, entry.value)));
+          }
+        }
+
+        if (sourceType == .webdav) {
+          await Future.wait(tasks);
+        }
+
+        id2Song.removeWhere(
+          (id, song) => song.sourceType == sourceType && !validId.contains(id),
+        );
+
+        for (final folder in folderList) {
+          await folder.sync();
+          folder.clearPathAndModified();
+        }
+
+        await pool.close();
         break;
       case .navidrome:
-        final list = await navidromeClient!.getSongs();
-        for (final map in list) {
-          MyAudioMetadata song = MyAudioMetadata.fromNavidromeMap(map);
-          songListManager.navidromeSongList.add(song);
-          id2Song[song.id] = song;
+        id2Song.removeWhere((id, song) => song.sourceType == sourceType);
+        if (navidromeClient != null) {
+          await for (final batch in navidromeClient!.getSongs()) {
+            for (final map in batch) {
+              MyAudioMetadata song = MyAudioMetadata.fromNavidromeMap(map);
+              songListManager.navidromeSongList.add(song);
+              id2Song[song.id] = song;
+            }
+            _syncNotify(sourceType);
+          }
         }
         break;
       default:
-        final list = await embyClient!.getAllSongs();
-        for (final map in list) {
-          MyAudioMetadata song = MyAudioMetadata.fromEmbyMap(map);
-          songListManager.embySongList.add(song);
-          id2Song[song.id] = song;
+        id2Song.removeWhere((id, song) => song.sourceType == sourceType);
+        if (embyClient != null) {
+          await for (final batch in embyClient!.getAllSongs()) {
+            for (final map in batch) {
+              final song = MyAudioMetadata.fromEmbyMap(map);
+              songListManager.embySongList.add(song);
+              id2Song[song.id] = song;
+            }
+            _syncNotify(sourceType);
+          }
         }
         break;
     }
 
-    songListManager.getChangeNotifier2(sourceType).value++;
+    _syncNotify(sourceType);
+
     await _saveSongIdList(sourceType);
     await _saveMetadata(sourceType);
   }

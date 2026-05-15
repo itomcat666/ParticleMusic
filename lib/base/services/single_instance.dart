@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:particle_music/base/app.dart';
-import 'package:particle_music/base/utils/logger.dart';
+import 'package:particle_music/base/services/logger.dart';
 import 'package:window_manager/window_manager.dart';
 
 class SingleInstance {

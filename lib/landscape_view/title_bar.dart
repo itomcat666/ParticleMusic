@@ -2,10 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/interaction.dart';
 import 'package:particle_music/base/services/keyboard.dart';
 import 'package:particle_music/base/services/my_window_listener.dart';
 import 'package:particle_music/layer/layers_manager.dart';
@@ -210,7 +209,7 @@ class _TitleBarState extends State<TitleBar> {
 
         if (widget.hintText != null) SizedBox(child: searchField()),
 
-        if (!widget.isMainPage && !isMobile)
+        if (!widget.isMainPage && !isMobile && !isMaximizedNotifier.value)
           ValueListenableBuilder(
             valueListenable: lyricsPageForegroundColor.valueNotifier,
             builder: (context, value, child) {
@@ -221,16 +220,6 @@ class _TitleBarState extends State<TitleBar> {
                     await windowManager.setFullScreen(false);
                     isFullScreenNotifier.value = false;
                   } else {
-                    if (isMaximizedNotifier.value) {
-                      if (context.mounted) {
-                        showCenterMessage(
-                          context,
-                          'Entering fullscreen from a maximized window will cause a bug',
-                          duration: 3000,
-                        );
-                      }
-                      return;
-                    }
                     await windowManager.setFullScreen(true);
                     isFullScreenNotifier.value = true;
                   }

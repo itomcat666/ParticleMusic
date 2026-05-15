@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/utils/source_type.dart';
 import 'package:particle_music/base/widgets/my_auto_size_text.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
@@ -20,7 +20,7 @@ import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/base/widgets/my_location.dart';
 import 'package:particle_music/portrait_view/song_list_tile.dart';
 import 'package:particle_music/base/widgets/base_song_list.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 
 class SongListPage extends BaseSongListWidget {
   const SongListPage({
@@ -294,7 +294,7 @@ class _SongListPageState extends BaseSongListState<SongListPage> {
               visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
               onTap: () async {
                 if (await showConfirmDialog(context, l10n.delete)) {
-                  layersManager.removePlaylistLayer(playlist!);
+                  layersManager.removeLayer(playlist!);
                   playlistManager.deletePlaylist(playlist!);
                   if (context.mounted) {
                     Navigator.pop(context);

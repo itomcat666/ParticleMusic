@@ -5,7 +5,7 @@ import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/data/library.dart';
 import 'package:particle_music/portrait_view/custom_appbar_leading.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 
 class FoldersPage extends StatelessWidget {
   const FoldersPage({super.key});
@@ -39,7 +39,7 @@ class FoldersPage extends StatelessWidget {
           }
           return ListTile(
             leading: ValueListenableBuilder(
-              valueListenable: folder.updateNotifier,
+              valueListenable: folder.changeNotifier,
               builder: (context, value, child) {
                 return CoverArtWidget(
                   size: 40,

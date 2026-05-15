@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:particle_music/base/services/logger.dart';
 
 EmbyClient? embyClient;
 
@@ -91,26 +92,45 @@ class EmbyClient {
     }).toList();
   }
 
-  Future<List<Map<String, dynamic>>> getAllSongs() async {
+  Stream<List<Map<String, dynamic>>> getAllSongs({int limit = 50}) async* {
     final libraries = await getMusicLibraries();
-    if (libraries.isEmpty) return [];
+
+    if (libraries.isEmpty) return;
 
     final libraryId = libraries.first['Id'];
 
-    final response = await dio.get(
-      '/Users/$userId/Items',
-      queryParameters: {
-        'ParentId': libraryId,
-        'Recursive': true,
-        'IncludeItemTypes': 'Audio',
+    int startIndex = 0;
+    const limit = 50;
 
-        'Fields':
-            'Id,Name,Album,Artists,AlbumArtist,RunTimeTicks,Genres,ProductionYear,IndexNumber,ParentIndexNumber,MediaSources,UserData',
-        'EnableImages': false,
-      },
-    );
+    while (true) {
+      final response = await dio.get(
+        '/Users/$userId/Items',
+        queryParameters: {
+          'ParentId': libraryId,
+          'Recursive': true,
+          'IncludeItemTypes': 'Audio',
 
-    return (response.data['Items'] as List).cast<Map<String, dynamic>>();
+          'StartIndex': startIndex,
+          'Limit': limit,
+
+          'Fields':
+              'Id,Name,Album,Artists,AlbumArtist,RunTimeTicks,Genres,ProductionYear,IndexNumber,ParentIndexNumber,MediaSources,UserData',
+
+          'EnableImages': false,
+        },
+      );
+
+      final items = (response.data['Items'] as List)
+          .cast<Map<String, dynamic>>();
+
+      if (items.isEmpty) break;
+
+      yield items;
+
+      startIndex += limit;
+
+      logger.output('Fetched $startIndex songs...');
+    }
   }
 
   /// Audio stream URL

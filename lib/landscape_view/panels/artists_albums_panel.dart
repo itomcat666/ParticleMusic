@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/data/artist_album.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';

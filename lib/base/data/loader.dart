@@ -6,7 +6,7 @@ import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/data/config.dart';
 import 'package:particle_music/base/data/artist_album.dart';
 import 'package:particle_music/base/services/bookmark_service.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/data/history.dart';
 import 'package:particle_music/layer/layers_manager.dart';
@@ -18,6 +18,12 @@ import 'package:permission_handler/permission_handler.dart';
 final ValueNotifier<int> loadedCountNotifier = ValueNotifier(0);
 
 class Loader {
+  static bool _syncing = false;
+
+  static bool get syncing => _syncing;
+
+  static final syncStateNotifier = ValueNotifier(0);
+
   static Future<void> init() async {
     if (Platform.isAndroid) {
       await Permission.storage.request();
@@ -59,6 +65,9 @@ class Loader {
   }
 
   static Future<void> sync(int syncBitMask) async {
+    _syncing = true;
+    syncStateNotifier.value++;
+
     await audioHandler.clear();
     artistAlbumManager.clear();
 
@@ -87,6 +96,9 @@ class Loader {
     }
 
     artistAlbumManager.classify();
+
+    _syncing = false;
+    syncStateNotifier.value++;
   }
 
   static void _handleLegacyVersionData() {

@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
-import 'package:particle_music/base/utils/logger.dart';
+import 'package:particle_music/base/services/logger.dart';
 
 NavidromeClient? navidromeClient;
 
@@ -97,11 +97,10 @@ class NavidromeClient {
     return res ?? false;
   }
 
-  Future<List<Map<String, dynamic>>> getSongs() async {
+  Stream<List<Map<String, dynamic>>> getSongs({int limit = 50}) async* {
     final List<Map<String, dynamic>> allSongs = [];
 
     int offset = 0;
-    const int limit = 500;
 
     while (true) {
       final res = await _safeRequest(
@@ -124,14 +123,14 @@ class NavidromeClient {
 
       if (normalized.isEmpty) break;
 
+      yield normalized;
+
       allSongs.addAll(normalized);
 
       offset += limit;
 
       logger.output('Fetched ${allSongs.length} songs...');
     }
-
-    return allSongs;
   }
 
   Future<List<String>> getFavoriteSongIds() async {

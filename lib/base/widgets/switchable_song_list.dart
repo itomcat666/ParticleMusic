@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/data/artist_album.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/landscape_view/panels/song_list_panel.dart';
 import 'package:particle_music/base/data/playlist.dart';

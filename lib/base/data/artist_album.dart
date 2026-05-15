@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/data/library.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 
 final artistAlbumManager = ArtistAlbumManager();
 
@@ -139,23 +139,19 @@ class ArtistAlbumManager {
 
     oldAlbum.sort();
     oldAlbum.songListManager.localChangeNotifier.value++;
-    // Reset when displaying local music; keep it when displaying Navidrome
-    if (oldAlbum.songListManager.getSongList().isEmpty) {
-      oldAlbum.songListManager.resetSourceType();
-    }
+
+    oldAlbum.songListManager.resetSourceType();
 
     if (currentAlbum != originAlbum) {
       if (oldAlbum.isEmpty) {
         albumList.remove(oldAlbum);
         name2Album.remove(originAlbum);
-        layersManager.removeAlbumLayer(oldAlbum);
+        layersManager.removeLayer(oldAlbum);
       }
       final newAlbum = name2Album[currentAlbum]!;
       newAlbum.sort();
       newAlbum.songListManager.localChangeNotifier.value++;
-      if (newAlbum.songListManager.getSongList().isEmpty) {
-        newAlbum.songListManager.resetSourceType();
-      }
+      newAlbum.songListManager.resetSourceType();
     }
 
     sortAlbums();
@@ -176,7 +172,6 @@ class ArtistAlbumManager {
       artist.combineAlbums();
       artist.songListManager.localChangeNotifier.value++;
 
-      // Reset when displaying local music; keep it when displaying Navidrome
       if (artist.songListManager.getSongList().isEmpty) {
         artist.songListManager.resetSourceType();
       }
@@ -184,7 +179,7 @@ class ArtistAlbumManager {
       if (artist.isEmpty) {
         artistList.remove(artist);
         name2Artist.remove(artist.name);
-        layersManager.removeArtistLayer(artist);
+        layersManager.removeLayer(artist);
       }
     }
 

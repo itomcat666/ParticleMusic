@@ -4,9 +4,9 @@ import 'dart:math';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/services/bookmark_service.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/utils/path.dart';
 import 'package:particle_music/base/services/webdav_client.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
@@ -186,6 +186,13 @@ class _ManageMusicFoldersState extends State<ManageMusicFolders> {
     final l10n = AppLocalizations.of(context);
 
     if (await showConfirmDialog(context, l10n.confirm)) {
+      if (Loader.syncing) {
+        if (context.mounted) {
+          showCenterMessage(context, 'syncing, try it later');
+        }
+        return;
+      }
+
       bool updateLocal = await library.updateFolders(
         currentLocalFolderIdList,
         true,

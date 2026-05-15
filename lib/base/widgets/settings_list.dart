@@ -9,11 +9,11 @@ import 'package:http/http.dart' as http;
 import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/data/config.dart';
 import 'package:particle_music/base/services/emby_client.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/interaction.dart';
-import 'package:particle_music/base/utils/logger.dart';
+import 'package:particle_music/base/services/interaction.dart';
+import 'package:particle_music/base/services/logger.dart';
 import 'package:particle_music/base/services/webdav_client.dart';
 import 'package:particle_music/base/widgets/custom_text_field.dart';
 import 'package:particle_music/base/widgets/equalizer.dart';
@@ -173,6 +173,12 @@ class SettingsList extends StatelessWidget {
       title: Text(l10n.reload),
       onTap: () async {
         if (await showConfirmDialog(context, l10n.reload)) {
+          if (Loader.syncing) {
+            if (context.mounted) {
+              showCenterMessage(context, 'syncing, try it later');
+            }
+            return;
+          }
           await Loader.sync(15);
         }
       },
@@ -284,6 +290,16 @@ class SettingsList extends StatelessWidget {
                                     return;
                                   }
 
+                                  if (Loader.syncing) {
+                                    if (context.mounted) {
+                                      showCenterMessage(
+                                        context,
+                                        'syncing, try it later',
+                                      );
+                                    }
+                                    return;
+                                  }
+
                                   navidromeClient = null;
                                   setting.save();
                                   if (context.mounted) {
@@ -321,6 +337,16 @@ class SettingsList extends StatelessWidget {
                                     }
 
                                     config.save();
+
+                                    if (Loader.syncing) {
+                                      if (context.mounted) {
+                                        showCenterMessage(
+                                          context,
+                                          'syncing, try it later',
+                                        );
+                                      }
+                                      return;
+                                    }
 
                                     await Loader.sync(4);
                                   } else {
@@ -420,6 +446,15 @@ class SettingsList extends StatelessWidget {
                                   setting.save();
                                   if (context.mounted) {
                                     Navigator.pop(context);
+                                  }
+                                  if (Loader.syncing) {
+                                    if (context.mounted) {
+                                      showCenterMessage(
+                                        context,
+                                        'syncing, try it later',
+                                      );
+                                    }
+                                    return;
                                   }
                                   Loader.sync(2);
                                 },
@@ -543,6 +578,15 @@ class SettingsList extends StatelessWidget {
                                   if (context.mounted) {
                                     Navigator.pop(context);
                                   }
+                                  if (Loader.syncing) {
+                                    if (context.mounted) {
+                                      showCenterMessage(
+                                        context,
+                                        'syncing, try it later',
+                                      );
+                                    }
+                                    return;
+                                  }
                                   Loader.sync(8);
                                 },
                                 style: ElevatedButton.styleFrom(
@@ -571,6 +615,15 @@ class SettingsList extends StatelessWidget {
                                     return;
                                   }
 
+                                  if (Loader.syncing) {
+                                    if (context.mounted) {
+                                      showCenterMessage(
+                                        context,
+                                        'syncing, try it later',
+                                      );
+                                    }
+                                    return;
+                                  }
                                   Loader.sync(8);
 
                                   if (context.mounted) {

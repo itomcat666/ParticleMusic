@@ -2,10 +2,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/audio_handler.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/widgets/buttons.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/widgets/my_auto_size_text.dart';
@@ -20,7 +20,7 @@ import 'package:particle_music/base/widgets/play_queue_sheet.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
 import 'package:particle_music/base/data/playlist.dart';
 import 'package:particle_music/base/widgets/seekbar.dart';
-import 'package:particle_music/base/utils/metadata.dart';
+import 'package:particle_music/base/utils/metadata_utils.dart';
 import 'package:smooth_corner/smooth_corner.dart';
 
 class PortraitLyricsPage extends StatefulWidget {

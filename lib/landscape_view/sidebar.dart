@@ -1,10 +1,10 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:particle_music/base/utils/color_manager.dart';
+import 'package:particle_music/base/services/color_manager.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
-import 'package:particle_music/base/utils/interaction.dart';
+import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
 import 'package:particle_music/base/widgets/my_divider.dart';
 import 'package:particle_music/base/widgets/playlist_widgets.dart';
@@ -429,7 +429,7 @@ class Sidebar extends StatelessWidget {
                           closeDrawer!.call();
                           await Future.delayed(Duration(milliseconds: 250));
                         }
-                        layersManager.removePlaylistLayer(playlist);
+                        layersManager.removeLayer(playlist);
                         playlistManager.deletePlaylist(playlist);
                       }
                     },

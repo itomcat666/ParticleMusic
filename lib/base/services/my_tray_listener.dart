@@ -1,5 +1,5 @@
 import 'package:particle_music/base/audio_handler.dart';
-import 'package:particle_music/base/utils/exit.dart';
+import 'package:particle_music/base/services/exit.dart';
 import 'package:particle_music/landscape_view/desktop_lyrics.dart';
 import 'package:particle_music/base/extensions/window_controller_extension.dart';
 import 'package:tray_manager/tray_manager.dart';

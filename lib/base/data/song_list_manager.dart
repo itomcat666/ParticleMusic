@@ -36,6 +36,9 @@ class SongListManager {
   }
 
   void resetSourceType() {
+    if (getSongList().isNotEmpty) {
+      return;
+    }
     if (localSongList.isNotEmpty) {
       sourceTypeNotifier.value = .local;
     } else if (webdavSongList.isNotEmpty) {
