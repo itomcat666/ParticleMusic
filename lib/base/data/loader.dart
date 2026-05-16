@@ -37,6 +37,7 @@ class Loader {
 
     colorManager.updateColors();
 
+    await library.loadFonts();
     await library.initAllFolders();
 
     await playlistManager.initAllPlaylists();

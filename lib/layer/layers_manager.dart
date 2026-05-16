@@ -12,6 +12,7 @@ import 'package:particle_music/base/data/history.dart';
 import 'package:particle_music/landscape_view/sidebar.dart';
 import 'package:particle_music/layer/artists_albums_layer.dart';
 import 'package:particle_music/layer/folders_layer.dart';
+import 'package:particle_music/layer/font_picker_layer.dart';
 import 'package:particle_music/layer/license_layer.dart';
 import 'package:particle_music/layer/playlists_layer.dart';
 import 'package:particle_music/layer/ranking_layer.dart';
@@ -131,6 +132,8 @@ class LayersManager {
           return SettingsLayer(key: GlobalKey());
         } else if (label == 'license') {
           return LicenseLayer(key: GlobalKey());
+        } else if (label == 'font_picker') {
+          return FontPickerLayer(key: GlobalKey());
         }
         return SinglePlaylistLayer(
           key: GlobalKey(),

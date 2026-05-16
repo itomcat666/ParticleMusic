@@ -2,11 +2,9 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:particle_music/base/services/color_manager.dart';
-import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/asset_images.dart';
 import 'package:particle_music/base/services/interaction.dart';
 import 'package:particle_music/base/widgets/cover_art_widget.dart';
-import 'package:particle_music/base/widgets/custom_text_field.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/base/data/playlist.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
@@ -102,52 +100,8 @@ class _Add2PlaylistPanelState extends State<Add2PlaylistPanel> {
 Future<bool> showCreatePlaylistDialog(BuildContext context) async {
   final l10n = AppLocalizations.of(context);
 
-  final controller = TextEditingController();
-  final specificTextcolor = colorManager.getSpecificTextColor();
-
-  final result = await showAnimationDialog<String>(
-    context: context,
-    child: SizedBox(
-      width: 300,
-      height: isMobile ? 220 : 200,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(30, 20, 30, 20),
-        child: Column(
-          children: [
-            Center(
-              child: Text(
-                l10n.createPlaylist,
-                style: TextStyle(fontSize: 25, color: specificTextcolor),
-              ),
-            ),
-            SizedBox(height: 20),
-            CustomTextField(null, controller, compact: false, autoFocus: true),
-            SizedBox(height: 30),
-            Center(
-              child: ListenableBuilder(
-                listenable: Listenable.merge([
-                  buttonColor.valueNotifier,
-                  lyricsPageButtonColor.valueNotifier,
-                ]),
-                builder: (context, _) {
-                  return ElevatedButton(
-                    onPressed: () => Navigator.pop(context, controller.text),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: colorManager.getSpecificButtonColor(),
-                      foregroundColor: specificTextcolor,
-                    ),
-                    child: Text(l10n.confirm),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  if (result != null && result != '') {
+  final result = await getInputTextDialog(context, l10n.createPlaylist);
+  if (result != '') {
     await playlistManager.createPlaylist(result);
     return true;
   }

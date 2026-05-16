@@ -40,6 +40,7 @@
   "playlistCount": "{count} 个",
   "folderCount": "{count} 个",
   "settingCount": "{count} 项",
+  "fontCount": "{count} 种",
   "searchSongs": "搜索歌曲",
   "searchArtists": "搜索艺术家",
   "searchAlbums": "搜索专辑",
@@ -154,5 +155,10 @@
   "clearCache": "清除缓存",
   "tapAgain": "再按一次退出",
   "close": "关闭",
-  "fonts": "字体"
+  "fonts": "字体",
+  "searchFonts": "搜索字体",
+  "setFontName": "设置字体名称",
+  "setFont": "设置字体",
+  "addFont": "添加字体",
+  "currentFont": "当前字体"
 }

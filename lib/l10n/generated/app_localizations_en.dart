@@ -144,6 +144,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String fontCount(int count) {
+    return '$count in total';
+  }
+
+  @override
   String get searchSongs => 'Search Songs';
 
   @override
@@ -487,4 +492,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fonts => 'Fonts';
+
+  @override
+  String get searchFonts => 'Search Fonts';
+
+  @override
+  String get setFontName => 'Set Font Name';
+
+  @override
+  String get setFont => 'Set Font';
+
+  @override
+  String get addFont => 'Add Font';
+
+  @override
+  String get currentFont => 'Current Font';
 }

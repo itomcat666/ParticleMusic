@@ -144,6 +144,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String fontCount(int count) {
+    return '$count 种';
+  }
+
+  @override
   String get searchSongs => '搜索歌曲';
 
   @override
@@ -487,4 +492,19 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get fonts => '字体';
+
+  @override
+  String get searchFonts => '搜索字体';
+
+  @override
+  String get setFontName => '设置字体名称';
+
+  @override
+  String get setFont => '设置字体';
+
+  @override
+  String get addFont => '添加字体';
+
+  @override
+  String get currentFont => '当前字体';
 }

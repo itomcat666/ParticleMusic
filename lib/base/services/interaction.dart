@@ -2,8 +2,10 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/services/color_manager.dart';
+import 'package:particle_music/base/widgets/custom_text_field.dart';
 import 'package:particle_music/l10n/generated/app_localizations.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:smooth_corner/smooth_corner.dart';
@@ -123,6 +125,57 @@ Future<bool> showConfirmDialog(BuildContext context, String action) async {
     ),
   );
   return result ?? false;
+}
+
+Future<String> getInputTextDialog(BuildContext context, String title) async {
+  final l10n = AppLocalizations.of(context);
+
+  final controller = TextEditingController();
+  final specificTextcolor = colorManager.getSpecificTextColor();
+
+  final result = await showAnimationDialog<String>(
+    context: context,
+    child: SizedBox(
+      width: 300,
+      height: isMobile ? 220 : 200,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(30, 20, 30, 20),
+        child: Column(
+          children: [
+            Center(
+              child: Text(
+                title,
+                style: TextStyle(fontSize: 25, color: specificTextcolor),
+              ),
+            ),
+            SizedBox(height: 20),
+            CustomTextField(null, controller, compact: false, autoFocus: true),
+            SizedBox(height: 30),
+            Center(
+              child: ListenableBuilder(
+                listenable: Listenable.merge([
+                  buttonColor.valueNotifier,
+                  lyricsPageButtonColor.valueNotifier,
+                ]),
+                builder: (context, _) {
+                  return ElevatedButton(
+                    onPressed: () => Navigator.pop(context, controller.text),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: colorManager.getSpecificButtonColor(),
+                      foregroundColor: specificTextcolor,
+                    ),
+                    child: Text(l10n.confirm),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  return result ?? '';
 }
 
 Future<T?> showAnimationDialog<T>({

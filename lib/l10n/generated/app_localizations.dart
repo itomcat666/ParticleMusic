@@ -344,6 +344,12 @@ abstract class AppLocalizations {
   /// **'{count} in total'**
   String settingCount(int count);
 
+  /// No description provided for @fontCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} in total'**
+  String fontCount(int count);
+
   /// No description provided for @searchSongs.
   ///
   /// In en, this message translates to:
@@ -1033,6 +1039,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Fonts'**
   String get fonts;
+
+  /// No description provided for @searchFonts.
+  ///
+  /// In en, this message translates to:
+  /// **'Search Fonts'**
+  String get searchFonts;
+
+  /// No description provided for @setFontName.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Font Name'**
+  String get setFontName;
+
+  /// No description provided for @setFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Set Font'**
+  String get setFont;
+
+  /// No description provided for @addFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Font'**
+  String get addFont;
+
+  /// No description provided for @currentFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Current Font'**
+  String get currentFont;
 }
 
 class _AppLocalizationsDelegate

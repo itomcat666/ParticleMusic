@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:just_font_scan/just_font_scan.dart';
 import 'package:particle_music/base/audio_handler.dart';
 import 'package:particle_music/base/data/config.dart';
 import 'package:particle_music/base/services/emby_client.dart';
@@ -87,10 +86,7 @@ class SettingsList extends StatelessWidget {
           paddingIfNeed(
             isLandscape,
             ListTile(
-              leading: ImageIcon(
-                infoImage,
-                size: isLandscape ? null : iconSize,
-              ),
+              leading: ImageIcon(infoImage, size: iconSize),
               title: Text(l10n.openSourceLicense),
               onTap: () {
                 layersManager.pushLayer('license');
@@ -125,8 +121,7 @@ class SettingsList extends StatelessWidget {
             ),
           ),
 
-        if (Platform.isWindows || Platform.isMacOS)
-          sliverBox(paddingIfNeed(isLandscape, fontListTile(context, l10n))),
+        sliverBox(paddingIfNeed(isLandscape, fontListTile(context, l10n))),
 
         sliverBox(paddingIfNeed(isLandscape, themeListTile(context, l10n))),
 
@@ -769,82 +764,7 @@ class SettingsList extends StatelessWidget {
 
       title: Text(l10n.fonts),
       onTap: () {
-        final fonts = JustFontScan.scan();
-
-        const previewText = "Music 音乐 123";
-        showAnimationDialog(
-          context: context,
-          child: SizedBox(
-            width: 300,
-            height: 350,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: ListView.builder(
-                itemCount: fonts.length,
-                itemBuilder: (context, index) {
-                  final font = fonts[index];
-
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-
-                    title: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          font.name,
-                          style: TextStyle(fontFamily: font.name, fontSize: 16),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          previewText,
-                          style: TextStyle(
-                            fontFamily: font.name,
-                            fontWeight: FontWeight.w300,
-                            fontSize: 24,
-                          ),
-                        ),
-
-                        Text(
-                          previewText,
-                          style: TextStyle(
-                            fontFamily: font.name,
-                            fontWeight: FontWeight.normal,
-                            fontSize: 24,
-                          ),
-                        ),
-
-                        Text(
-                          previewText,
-                          style: TextStyle(
-                            fontFamily: font.name,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 24,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    onTap: () async {
-                      if (await showConfirmDialog(context, l10n.continueMsg)) {
-                        if (context.mounted) {
-                          Navigator.pop(context);
-                        }
-
-                        fontFamilyNotifier.value = font.name;
-                        setting.save();
-                      }
-                    },
-                  );
-                },
-              ),
-            ),
-          ),
-        );
+        layersManager.pushLayer('font_picker');
       },
     );
   }

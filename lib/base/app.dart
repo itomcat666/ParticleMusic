@@ -25,3 +25,5 @@ final ValueNotifier<Locale?> localeNotifier = ValueNotifier(null);
 enum SourceType { local, webdav, navidrome, emby }
 
 final ValueNotifier<String?> fontFamilyNotifier = ValueNotifier(null);
+
+final List<String> importedFonts = [];

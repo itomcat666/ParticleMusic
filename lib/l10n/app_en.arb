@@ -82,6 +82,14 @@
       }
     }
   },
+  "fontCount": "{count} in total",
+  "@fontCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "searchSongs": "Search Songs",
   "searchArtists": "Search Artists",
   "searchAlbums": "Search Albums",
@@ -196,5 +204,10 @@
   "clearCache": "Clear Cache",
   "tapAgain": "Tap Again to Exit",
   "close": "Close",
-  "fonts": "Fonts"
+  "fonts": "Fonts",
+  "searchFonts": "Search Fonts",
+  "setFontName": "Set Font Name",
+  "setFont": "Set Font",
+  "addFont": "Add Font",
+  "currentFont": "Current Font"
 }

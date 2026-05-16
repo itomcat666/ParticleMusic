@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audio_tags_lofty/audio_tags_lofty.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:particle_music/base/app.dart';
 import 'package:particle_music/base/data/database.dart';
 import 'package:particle_music/base/data/song_list_manager.dart';
@@ -17,6 +18,7 @@ import 'package:particle_music/base/data/folder.dart';
 import 'package:particle_music/layer/layers_manager.dart';
 import 'package:particle_music/base/my_audio_metadata.dart';
 import 'package:particle_music/base/services/navidrome_client.dart';
+import 'package:path/path.dart';
 import 'package:pool/pool.dart';
 import 'package:uuid/uuid.dart';
 
@@ -47,6 +49,9 @@ class Library {
   List<Folder> webdavFolderList = [];
   final folderListChangeNotifier = ValueNotifier(0);
   String? iosFileProviderStorage;
+
+  late File _fontMapFile;
+  Map<String, List<String>> _fontMap = {};
 
   Library() {
     _localSongIdListFile = File(
@@ -85,6 +90,9 @@ class Library {
       "${getFolderConfigPath(.webdav)}/folder_map_list.json",
     );
     initFile(_webdavFolderMapListFile, true);
+
+    _fontMapFile = File("${appSupportDir.path}/fonts/font_map.json");
+    initFile(_fontMapFile, false);
   }
 
   Future<void> _initLocalFolders() async {
@@ -110,6 +118,57 @@ class Library {
   Future<void> initAllFolders() async {
     await _initLocalFolders();
     await _initWebdavFolders();
+  }
+
+  Future<void> loadFonts() async {
+    _fontMap =
+        (jsonDecode(_fontMapFile.readAsStringSync()) as Map<String, dynamic>)
+            .map((key, value) => MapEntry(key, List<String>.from(value)));
+    for (final entry in _fontMap.entries) {
+      final name = entry.key;
+      final fontPathList = entry.value;
+      final loader = FontLoader(name);
+
+      for (final fontPath in fontPathList) {
+        final fontFile = File("${appSupportDir.path}/fonts/$fontPath");
+        if (!fontFile.existsSync()) {
+          continue;
+        }
+        final bytes = fontFile.readAsBytesSync();
+        loader.addFont(Future.value(ByteData.view(bytes.buffer)));
+      }
+      await loader.load();
+      importedFonts.add(name);
+    }
+  }
+
+  Future<void> addFonts(String name, List<String> paths) async {
+    for (String path in paths) {
+      File originFile = File(path);
+      path = basename(path);
+      originFile.copySync("${appSupportDir.path}/fonts/$path");
+      _fontMap
+          .putIfAbsent(name, () {
+            return [];
+          })
+          .add(path);
+    }
+
+    await _fontMapFile.writeAsString(json.encode(_fontMap));
+  }
+
+  Future<void> deleteFonts(String name) async {
+    if (_fontMap[name] == null) {
+      return;
+    }
+    for (final path in _fontMap[name]!) {
+      final tmp = File("${appSupportDir.path}/fonts/$path");
+      if (await tmp.exists()) {
+        await tmp.delete();
+      }
+    }
+    _fontMap.remove(name);
+    await _fontMapFile.writeAsString(json.encode(_fontMap));
   }
 
   void setIOSFileProviderStorageIfNeed(String? iosPath) {
