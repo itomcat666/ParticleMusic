@@ -77,7 +77,6 @@ class Loader {
     _syncing = true;
     syncStateNotifier.value++;
 
-    await audioHandler.clear();
     artistAlbumManager.clear();
 
     if ((syncBitMask & 1) == 1) {
@@ -111,6 +110,9 @@ class Loader {
     if ((syncBitMask & 8) == 8) {
       await _sync(.emby);
     }
+
+    await audioHandler.sync();
+
     artistAlbumManager.classify();
 
     _syncing = false;

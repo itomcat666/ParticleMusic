@@ -447,6 +447,46 @@ class MyAudioHandler extends BaseAudioHandler {
     savePlayState();
   }
 
+  List<MyAudioMetadata> getNewQueue(List<MyAudioMetadata> oldQueue) {
+    final List<MyAudioMetadata> newPlayQueue = [];
+    for (final song in oldQueue) {
+      final newSong = library.id2Song[song.id];
+      if (newSong != null) {
+        newPlayQueue.add(newSong);
+      }
+    }
+    return newPlayQueue;
+  }
+
+  Future<void> sync() async {
+    playQueue = getNewQueue(playQueue);
+    _playQueueTmp = getNewQueue(_playQueueTmp);
+    final currentSong = currentSongNotifier.value;
+    if (currentSong != null) {
+      final tmpCurrentSong = library.id2Song[currentSong.id];
+      if (tmpCurrentSong != null) {
+        currentSongNotifier.value = tmpCurrentSong;
+        currentIndex = playQueue.indexOf(tmpCurrentSong);
+        updateServiceMediaItem(tmpCurrentSong);
+      } else {
+        currentSongNotifier.value = null;
+        currentIndex = -1;
+        if (playQueue.isNotEmpty) {
+          await skipToNext();
+        } else {
+          await stop();
+          currentLyricLine = null;
+          if (!isMobile) {
+            await updateDesktopLyrics();
+          }
+        }
+      }
+    }
+
+    _savePlayQueueState();
+    savePlayState();
+  }
+
   Future<void> load() async {
     if (currentSongNotifier.value != null) {
       if (_playLastSyncTime != null) {
@@ -521,6 +561,13 @@ class MyAudioHandler extends BaseAudioHandler {
     }
     isLoading = false;
 
+    updateServiceMediaItem(currentSong);
+
+    updatePlaybackState(postion: Duration.zero);
+    _tryUpdateDesktopLyrics(Duration.zero);
+  }
+
+  void updateServiceMediaItem(MyAudioMetadata currentSong) {
     Uri? artUri;
 
     if (currentSong.pictureExist) {
@@ -537,8 +584,6 @@ class MyAudioHandler extends BaseAudioHandler {
         duration: currentSong.duration,
       ),
     );
-    updatePlaybackState(postion: Duration.zero);
-    _tryUpdateDesktopLyrics(Duration.zero);
   }
 
   @override
