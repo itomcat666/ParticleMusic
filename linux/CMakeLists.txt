@@ -5,7 +5,7 @@ project(runner LANGUAGES CXX)
 add_compile_options(-Wno-error=deprecated-declarations)
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "Sylvakru")
+set(BINARY_NAME "sylvakru")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
 set(APPLICATION_ID "com.afalphy.sylvakru")
