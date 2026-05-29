@@ -675,7 +675,7 @@ packages:
     description:
       path: "libs/android/media_kit_libs_android_audio"
       ref: main
-      resolved-ref: "5695a0bff0e78f4dd7021cdfd320942b93666667"
+      resolved-ref: c3686b1e8e6486c9706f44b3f067092fa38ecffe
       url: "https://github.com/AfalpHy/media-kit"
     source: git
     version: "1.3.9"
