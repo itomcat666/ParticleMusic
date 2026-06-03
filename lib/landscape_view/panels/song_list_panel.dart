@@ -847,11 +847,19 @@ extension _SongListPanel on _SongListState {
             isSelected.value = true;
             continuousSelectBeginIndex = index;
           }
-          if (isMobile) {
+
+          if (isMobile || waitForSecondClick) {
+            waitForSecondClick = false;
+            doubleClicktimer?.cancel();
             audioHandler.currentIndex = index;
             await audioHandler.setPlayQueue(currentSongList);
             await audioHandler.load();
             audioHandler.play();
+          } else {
+            doubleClicktimer = Timer(Duration(milliseconds: 250), () {
+              waitForSecondClick = false;
+            });
+            waitForSecondClick = true;
           }
         },
       ),

@@ -96,6 +96,9 @@ class _SongListState extends State<SongList> {
 
   Timer? timer;
 
+  bool waitForSecondClick = false;
+  Timer? doubleClicktimer;
+
   final ValueNotifier<List<MyAudioMetadata>> currentSongListNotifier =
       ValueNotifier([]);
 
@@ -234,6 +237,7 @@ class _SongListState extends State<SongList> {
     textController.removeListener(updateSongList);
     scrollController.dispose();
     timer?.cancel();
+    doubleClicktimer?.cancel();
     super.dispose();
   }
 
