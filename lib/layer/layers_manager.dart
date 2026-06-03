@@ -349,14 +349,18 @@ class LayersManager {
       if ((detailWidgetMap[getRootLayer('artists')] as SingleArtistLayer?)
               ?.artist !=
           detail) {
+        await Future.delayed(Duration(milliseconds: 300));
         popDetail('artists');
+        await Future.delayed(Duration(milliseconds: 300));
         pushDetail('artists', detail);
       }
     } else {
       if ((detailWidgetMap[getRootLayer('albums')] as SingleAlbumLayer?)
               ?.album !=
           detail) {
+        await Future.delayed(Duration(milliseconds: 300));
         popDetail('albums');
+        await Future.delayed(Duration(milliseconds: 300));
         pushDetail('albums', detail);
       }
     }
