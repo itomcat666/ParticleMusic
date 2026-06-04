@@ -63,6 +63,31 @@ extension _AlbumsPage on _AlbumsLayerState {
           MyDivider(thickness: 0.5, height: 1, color: dividerColor),
 
           ListTile(
+            leading: ImageIcon(pictureImage),
+            title: Text(
+              l10n.pictureSize,
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            trailing: SizedBox(
+              width: 100,
+
+              child: Row(
+                children: [
+                  Spacer(),
+                  MySwitch(
+                    trueText: l10n.large,
+                    falseText: l10n.small,
+                    valueNotifier: useLargePictureNotifier,
+                    onToggleCallBack: () {
+                      setting.save();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          ListTile(
             leading: ImageIcon(sequenceImage),
             title: Text(
               l10n.order,
