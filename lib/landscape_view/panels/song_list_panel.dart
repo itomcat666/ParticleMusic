@@ -222,7 +222,7 @@ extension _SongListPanel on _SongListState {
                             SizedBox(width: 15),
                             ElevatedButton(
                               onPressed: () {
-                                Navigator.of(context).push(
+                                Navigator.of(context, rootNavigator: true).push(
                                   MaterialPageRoute(
                                     builder: (_) => SelectableSongListPage(
                                       songList: songList,
