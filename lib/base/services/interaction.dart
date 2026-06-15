@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:sylvakru/base/app.dart';
 import 'package:sylvakru/base/audio_handler.dart';
 import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/widgets/custom_text_field.dart';
+import 'package:sylvakru/base/widgets/my_divider.dart';
 import 'package:sylvakru/l10n/generated/app_localizations.dart';
 import 'package:sylvakru/layer/layers_manager.dart';
 import 'package:smooth_corner/smooth_corner.dart';
@@ -74,6 +76,7 @@ Future<bool> showConfirmDialog(BuildContext context, String action) async {
                           fontSize: 25,
                           fontWeight: .bold,
                           color: colorManager.getSpecificTextColor(),
+                          overflow: .ellipsis,
                         ),
                       ),
                     ),
@@ -341,4 +344,160 @@ void tryVibrate() {
   if (vibrationOnNoitifier.value) {
     HapticFeedback.heavyImpact();
   }
+}
+
+class MenuItem {
+  final IconData? iconData;
+  final String? text;
+  final void Function()? callback;
+  final bool isDivider;
+
+  MenuItem({this.iconData, this.text, this.callback, this.isDivider = false});
+}
+
+void showContextMenu(
+  BuildContext context,
+  List<MenuItem> items,
+  Offset globalPosition,
+) {
+  if (Platform.isIOS || Platform.isMacOS) {
+    // TODO:
+    return;
+  }
+
+  Navigator.of(context, rootNavigator: true).push(
+    PageRouteBuilder(
+      opaque: false,
+      barrierDismissible: true,
+      barrierColor: Colors.transparent,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (context, _, _) {
+        bool first = true;
+
+        // stack is important to position, I don't know why
+        return Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, _) {
+                WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+                  if (first) {
+                    first = false;
+                    return;
+                  }
+                  Navigator.of(context).pop();
+                });
+                return CustomSingleChildLayout(
+                  delegate: MenuPositionDelegate(
+                    globalPosition,
+                    MediaQuery.of(context).size,
+                  ),
+                  child: ListenableBuilder(
+                    listenable: Listenable.merge([
+                      layersManager.backgroundChangeNotifier,
+                      currentSongNotifier,
+                    ]),
+                    builder: (context, value) {
+                      return Material(
+                        color: Color.alphaBlend(
+                          colorManager.getSpecificMenuColor(),
+                          colorManager.getSpecificBgBaseColor(),
+                        ),
+                        elevation: 6.0,
+                        shape: SmoothRectangleBorder(
+                          smoothness: 1,
+                          borderRadius: .circular(8),
+                        ),
+
+                        child: IntrinsicWidth(
+                          child: Padding(
+                            padding: const EdgeInsets.all(6.0),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: items.map((item) {
+                                if (item.isDivider) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 4,
+                                    ),
+                                    child: MyDivider(
+                                      color: dividerColor,
+                                      height: 1,
+                                    ),
+                                  );
+                                }
+                                return InkWell(
+                                  mouseCursor: SystemMouseCursors.click,
+                                  onTap: () {
+                                    Navigator.of(context).pop();
+                                    item.callback?.call();
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 5,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        if (item.iconData != null) ...[
+                                          Icon(
+                                            item.iconData,
+                                            size: 18,
+                                            color: colorManager
+                                                .getSpecificIconColor(),
+                                          ),
+                                          const SizedBox(width: 10),
+                                        ],
+                                        Text(
+                                          item.text!,
+                                          style: .new(
+                                            color: colorManager
+                                                .getSpecificTextColor(),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class MenuPositionDelegate extends SingleChildLayoutDelegate {
+  final Offset position;
+  final Size screenSize;
+
+  MenuPositionDelegate(this.position, this.screenSize);
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    double x = position.dx;
+    double y = position.dy;
+
+    if (x + childSize.width > screenSize.width) {
+      x -= childSize.width;
+    }
+    if (y + childSize.height > screenSize.height) {
+      y -= childSize.height;
+    }
+
+    return Offset(x.clamp(0, screenSize.width), y.clamp(0, screenSize.height));
+  }
+
+  @override
+  bool shouldRelayout(covariant SingleChildLayoutDelegate oldDelegate) => true;
 }

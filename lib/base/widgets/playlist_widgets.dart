@@ -150,7 +150,7 @@ Widget reorderablePlaylistsView(BuildContext context) {
       tryVibrate();
     },
     proxyDecorator: (Widget child, int index, Animation<double> animation) {
-      return Material(elevation: 0.1, color: Colors.transparent, child: child);
+      return Material(color: Colors.transparent, child: child);
     },
     itemCount: playlistManager.playlists.length - 1,
     itemBuilder: (context, index) {

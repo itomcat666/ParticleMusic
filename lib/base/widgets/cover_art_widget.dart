@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:sylvakru/base/asset_images.dart';
 import 'package:sylvakru/base/my_audio_metadata.dart';
+import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/services/metadata_service.dart';
 import 'package:smooth_corner/smooth_corner.dart';
 
@@ -85,6 +86,10 @@ class CoverArtWidget extends StatelessWidget {
   }
 
   Widget musicNote() {
-    return ImageIcon(musicNoteImage, size: size);
+    return ImageIcon(
+      musicNoteImage,
+      size: size,
+      color: colorManager.getSpecificIconColor(),
+    );
   }
 }

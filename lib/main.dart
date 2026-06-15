@@ -65,7 +65,7 @@ Future<void> main() async {
                 ? Colors.white.withAlpha(20)
                 : Colors.black.withAlpha(20),
             hoverColor: mainPageThemeNotifier.value == .dark
-                ? Colors.white.withAlpha(15)
+                ? Colors.white.withAlpha(20)
                 : Colors.black.withAlpha(15),
             textTheme: Theme.of(context).textTheme.apply(
               fontFamily: fontFamilyNotifier.value,

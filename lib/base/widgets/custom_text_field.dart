@@ -76,7 +76,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
             keyboardType: widget.onlyNumber ? .number : null,
             minLines: widget.expand ? 3 : 1,
             maxLines: widget.expand ? null : 1,
-            style: TextStyle(fontSize: 12),
+            style: TextStyle(fontSize: 12, color: specificTextcolor),
             controller: widget.controller,
             decoration: InputDecoration(
               visualDensity: widget.compact ? .new(vertical: -2.5) : null,

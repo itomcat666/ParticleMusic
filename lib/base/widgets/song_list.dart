@@ -22,11 +22,14 @@ import 'package:sylvakru/base/data/library.dart';
 import 'package:sylvakru/base/my_audio_metadata.dart';
 import 'package:sylvakru/base/data/playlist.dart';
 import 'package:sylvakru/base/utils/metadata_utils.dart';
+import 'package:sylvakru/base/widgets/edit_metadata.dart';
 import 'package:sylvakru/base/widgets/my_auto_size_text.dart';
 import 'package:sylvakru/base/widgets/my_divider.dart';
 import 'package:sylvakru/base/widgets/my_location.dart';
 import 'package:sylvakru/base/widgets/my_sheet.dart';
+import 'package:sylvakru/base/widgets/playlist_widgets.dart';
 import 'package:sylvakru/base/widgets/selectable_song_list_page.dart';
+import 'package:sylvakru/base/widgets/song_info.dart';
 import 'package:sylvakru/l10n/generated/app_localizations.dart';
 import 'package:sylvakru/landscape_view/title_bar.dart';
 import 'package:sylvakru/layer/albums_layer.dart';
@@ -94,20 +97,23 @@ class _SongListState extends State<SongList> {
   bool waitForSecondClick = false;
   Timer? doubleClicktimer;
 
-  final ValueNotifier<List<MyAudioMetadata>> currentSongListNotifier =
-      ValueNotifier([]);
+  final currentSongListNotifier = ValueNotifier<List<MyAudioMetadata>>([]);
 
   final listIsScrollingNotifier = ValueNotifier(false);
   final scrollController = ScrollController();
-  final TextEditingController textController = TextEditingController();
+  final textController = TextEditingController();
 
   ValueNotifier<int> sortTypeNotifier = ValueNotifier(0);
 
+  List<ValueNotifier<bool>> isSelectedList = [];
+  bool isFixed = false;
   int continuousSelectBeginIndex = 0;
 
-  final EdgeInsets padding = const EdgeInsets.symmetric(horizontal: 30);
+  final showPlayButtonNotifierMap = <MyAudioMetadata, ValueNotifier<bool>>{};
 
-  final ValueNotifier<bool> isSearchNotifier = ValueNotifier(false);
+  final padding = const EdgeInsets.symmetric(horizontal: 30);
+
+  final isSearchNotifier = ValueNotifier(false);
 
   ValueNotifier<bool>? rootVisibleNotifier;
   Function()? backToRoot;
@@ -139,6 +145,23 @@ class _SongListState extends State<SongList> {
     final filteredSongList = filterSongList(songList, value);
     sortSongList(sortTypeNotifier.value, filteredSongList);
     currentSongListNotifier.value = filteredSongList;
+
+    isSelectedList = List.generate(
+      filteredSongList.length,
+      (_) => ValueNotifier(false),
+    );
+    isFixed =
+        isMobile ||
+        !reorderable ||
+        textController.text.isNotEmpty ||
+        sortTypeNotifier.value > 0;
+
+    continuousSelectBeginIndex = 0;
+
+    showPlayButtonNotifierMap.clear();
+    for (var e in filteredSongList) {
+      showPlayButtonNotifierMap[e] = ValueNotifier(false);
+    }
   }
 
   @override
