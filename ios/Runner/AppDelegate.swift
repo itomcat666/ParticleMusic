@@ -4,9 +4,9 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate, UIContextMenuInteractionDelegate {
 
-  var activeBookmarks: [String: URL] = [:]
+  private var activeBookmarks: [String: URL] = [:]
 
-  private var contextMenuInteraction: UIContextMenuInteraction?
+  private weak var flutterView: UIView?
   private var currentMenuActions: [[String: Any]] = []
   private var menuChannel: FlutterMethodChannel?
 
@@ -118,16 +118,18 @@ import UIKit
     })
 
     // Global Initialization: Attach interaction to FlutterView at startup to ensure immediate response on first long press.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
       guard let self = self,
-        let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
+        let windowScene = UIApplication.shared.connectedScenes
+          .first(where: { $0.activationState == .foregroundActive })
+          as? UIWindowScene,
+        let window = windowScene.windows.first(where: { $0.isKeyWindow }),
         let rootVC = window.rootViewController,
         let flutterView = rootVC.view
       else { return }
 
-      let initialInteraction = UIContextMenuInteraction(delegate: self)
-      self.contextMenuInteraction = initialInteraction
-      flutterView.addInteraction(initialInteraction)
+      self.flutterView = flutterView
+      flutterView.addInteraction(UIContextMenuInteraction(delegate: self))
     }
 
     GeneratedPluginRegistrant.register(with: self)
@@ -198,9 +200,7 @@ import UIKit
     previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration
   ) -> UITargetedPreview? {
 
-    guard let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }),
-      let rootVC = window.rootViewController,
-      let flutterView = rootVC.view,
+    guard let flutterView = self.flutterView,
       self.currentMenuRect != .zero
     else { return nil }
 
