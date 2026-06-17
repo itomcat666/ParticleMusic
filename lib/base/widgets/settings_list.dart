@@ -105,11 +105,11 @@ class SettingsList extends StatelessWidget {
           paddingIfNeed(isLandscape, cleanCacheListTile(context, l10n)),
         ),
 
+        sliverBox(paddingIfNeed(isLandscape, themeListTile(context, l10n))),
+
         sliverBox(paddingIfNeed(isLandscape, languageListTile(context, l10n))),
 
         sliverBox(paddingIfNeed(isLandscape, fontListTile(context, l10n))),
-
-        sliverBox(paddingIfNeed(isLandscape, themeListTile(context, l10n))),
 
         if (isMobile)
           sliverBox(paddingIfNeed(isLandscape, vibrationListTile(l10n))),
