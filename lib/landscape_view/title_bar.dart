@@ -317,6 +317,7 @@ class _TitleBarState extends State<TitleBar> {
                         });
                       }
                       await windowManager.show();
+                      await windowManager.setAlwaysOnTop(true);
                     },
                     icon: ImageIcon(miniModeImage),
                   ),

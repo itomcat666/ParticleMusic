@@ -321,6 +321,7 @@ class _MiniViewState extends State<MiniView> {
                     await windowManager.setPosition(mainPosition!);
                   }
                   await windowManager.show();
+                  await windowManager.setAlwaysOnTop(false);
                 },
                 icon: ImageIcon(miniModeImage),
               ),
