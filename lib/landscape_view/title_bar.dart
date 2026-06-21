@@ -318,6 +318,12 @@ class _TitleBarState extends State<TitleBar> {
                       }
                       await windowManager.show();
                       await windowManager.setAlwaysOnTop(true);
+
+                      layersManager.popDetail('artists');
+                      layersManager.popDetail('albums');
+                      layersManager.popDetail('folders');
+                      layersManager.popDetail('playlists');
+                      layersManager.popDetail('settings');
                     },
                     icon: ImageIcon(miniModeImage),
                   ),
