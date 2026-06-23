@@ -255,7 +255,6 @@ extension _SongListPanel on _SongListState {
                                         children: [
                                           ListTile(
                                             title: Text(l10n.defaultText),
-                                            dense: isMobile,
                                             onTap: () {
                                               Navigator.pop(context);
                                               sortTypeNotifier.value = 0;
@@ -269,7 +268,6 @@ extension _SongListPanel on _SongListState {
                                             title: Text(
                                               l10n.modifiedTimeAscending,
                                             ),
-                                            dense: isMobile,
                                             onTap: () {
                                               Navigator.pop(context);
                                               sortTypeNotifier.value = 9;
@@ -283,7 +281,6 @@ extension _SongListPanel on _SongListState {
                                             title: Text(
                                               l10n.modifiedTimedescending,
                                             ),
-                                            dense: isMobile,
                                             onTap: () {
                                               Navigator.pop(context);
                                               sortTypeNotifier.value = 10;
@@ -295,7 +292,6 @@ extension _SongListPanel on _SongListState {
                                           ),
                                           ListTile(
                                             title: Text(l10n.randomizeTemp),
-                                            dense: isMobile,
                                             onTap: () {
                                               Navigator.pop(context);
                                               sortTypeNotifier.value = 11;
@@ -309,7 +305,6 @@ extension _SongListPanel on _SongListState {
                                             title: Text(
                                               l10n.randomizePermanent,
                                             ),
-                                            dense: isMobile,
                                             onTap: () async {
                                               Navigator.pop(context);
                                               if (!await showConfirmDialog(

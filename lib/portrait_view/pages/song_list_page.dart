@@ -185,7 +185,6 @@ extension _SongListPage on _SongListState {
                                 }
                               },
                               trailing: value == i ? Icon(Icons.check) : null,
-                              dense: true,
                               visualDensity: VisualDensity(
                                 horizontal: 0,
                                 vertical: -4,
