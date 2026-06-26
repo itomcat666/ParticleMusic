@@ -20,11 +20,7 @@ class Logger {
 
   Future<void> init() async {
     final time = _formatForFileName(DateTime.now());
-    if (Platform.isIOS) {
-      _file = File('${appDocsDir.path}/logs/$time.txt');
-    } else {
-      _file = File('${appSupportDir.path}/logs/$time.txt');
-    }
+    _file = File('${appSupportDir.path}/logs/$time.txt');
     _file.createSync(recursive: true);
     output('App init');
   }

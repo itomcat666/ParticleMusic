@@ -124,9 +124,10 @@ class SettingsList extends StatelessWidget {
             paddingForLandscape(exitOnClose(l10n)),
           ), // always landscape style
 
-        sliverBox(paddingIfNeed(isLandscape, checkUpdate(context, l10n))),
+        if (!Platform.isIOS)
+          sliverBox(paddingIfNeed(isLandscape, checkUpdate(context, l10n))),
 
-        if (Platform.isAndroid)
+        if (isMobile)
           sliverBox(
             paddingIfNeed(isLandscape, exportLogListTile(context, l10n)),
           ),
