@@ -12,6 +12,7 @@ import 'package:sylvakru/base/asset_images.dart';
 import 'package:sylvakru/base/services/interaction.dart';
 import 'package:sylvakru/base/services/logger.dart';
 import 'package:sylvakru/base/services/webdav_client.dart';
+import 'package:sylvakru/base/utils/media_query.dart';
 import 'package:sylvakru/base/utils/source_type.dart';
 import 'package:sylvakru/base/widgets/connect_client_widget.dart';
 import 'package:sylvakru/base/widgets/equalizer.dart';
@@ -35,8 +36,7 @@ class SettingsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    bool isLandscape =
-        !isMobile || MediaQuery.of(context).orientation == .landscape;
+    bool isLandscape = !isMobile || !isTooNarrow(context);
     return CustomScrollView(
       slivers: [
         if (isLandscape)
@@ -56,7 +56,7 @@ class SettingsList extends StatelessWidget {
                       Platform.isAndroid
                           ? 14
                           : Platform.isIOS
-                          ? 14
+                          ? 15
                           : 12,
                     ),
                     style: TextStyle(fontSize: 12),
