@@ -20,6 +20,7 @@ extension _AboutPage on _AboutLayerState {
       automaticallyImplyLeading: false,
       leading: customAppBarLeading(context, label: 'settings'),
       backgroundColor: Colors.transparent,
+      systemOverlayStyle: mainPageThemeNotifier.value == .dark ? .light : .dark,
       scrolledUnderElevation: 0,
       title: Text(AppLocalizations.of(context).about),
       centerTitle: true,

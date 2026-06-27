@@ -10,6 +10,9 @@ extension _PlaylistsPage on _PlaylistsLayerState {
         automaticallyImplyLeading: false,
         leading: customAppBarLeading(context),
         backgroundColor: Colors.transparent,
+        systemOverlayStyle: mainPageThemeNotifier.value == .dark
+            ? .light
+            : .dark,
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(l10n.playlists),

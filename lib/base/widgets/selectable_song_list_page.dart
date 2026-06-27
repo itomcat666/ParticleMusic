@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:sylvakru/base/app.dart';
 import 'package:sylvakru/base/audio_handler.dart';
 import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/asset_images.dart';
@@ -243,6 +244,9 @@ class SelectableSongListPageState extends State<SelectableSongListPage> {
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           scrolledUnderElevation: 0,
+          systemOverlayStyle: mainPageThemeNotifier.value == .dark
+              ? .light
+              : .dark,
           actions: [
             MySearchField(
               hintText: l10n.searchSongs,

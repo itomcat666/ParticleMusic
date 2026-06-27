@@ -21,6 +21,7 @@ extension _SongListPage on _SongListState {
       leading: customAppBarLeading(context, label: rootLabel),
       backgroundColor: Colors.transparent,
       scrolledUnderElevation: 0,
+      systemOverlayStyle: mainPageThemeNotifier.value == .dark ? .light : .dark,
       actions: [
         ValueListenableBuilder(
           valueListenable: currentSongListNotifier,

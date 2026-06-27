@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sylvakru/base/audio_handler.dart';
 import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/app.dart';
@@ -75,109 +76,100 @@ class _PortraitLyricsPageState extends State<PortraitLyricsPage> {
     return ValueListenableBuilder(
       valueListenable: currentSongNotifier,
       builder: (context, currentSong, child) {
-        return Material(
-          color: Colors.transparent,
-          shape: SmoothRectangleBorder(
-            smoothness: 1,
-            borderRadius: .circular(
-              dragOffset > 0 ? screenRadius?.topLeft ?? 0 : 0,
+        return AnnotatedRegion(
+          value: lyricsPageForegroundColor.value.computeLuminance() > 0.5
+              ? SystemUiOverlayStyle.light
+              : SystemUiOverlayStyle.dark,
+          child: Material(
+            color: Colors.transparent,
+            shape: SmoothRectangleBorder(
+              smoothness: 1,
+              borderRadius: .circular(
+                dragOffset > 0 ? screenRadius?.topLeft ?? 0 : 0,
+              ),
             ),
-          ),
-          clipBehavior: .antiAliasWithSaveLayer,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (lyricsPageThemeNotifier.value == .vivid) ...[
-                CoverArtWidget(
-                  song: currentSong,
-                  color: colorManager.getSpecificLyricsPageCoverArtBaseColor(),
-                ),
-                BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                  child: AnimatedContainer(
-                    duration: Duration(milliseconds: 300),
-                    curve: Curves.easeInOutCubic,
-                    color: currentCoverArtColor.withAlpha(180),
+            clipBehavior: .antiAliasWithSaveLayer,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (lyricsPageThemeNotifier.value == .vivid) ...[
+                  CoverArtWidget(
+                    song: currentSong,
+                    color: colorManager
+                        .getSpecificLyricsPageCoverArtBaseColor(),
+                  ),
+                  BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                    child: AnimatedContainer(
+                      duration: Duration(milliseconds: 300),
+                      curve: Curves.easeInOutCubic,
+                      color: currentCoverArtColor.withAlpha(180),
+                    ),
+                  ),
+                ],
+                Container(
+                  color: lyricsPageBackgroundColor.value,
+                  child: Column(
+                    children: [
+                      SizedBox(height: 50),
+                      Row(
+                        children: [
+                          SizedBox(width: 30),
+                          Expanded(
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  height: 36,
+                                  child: Center(
+                                    child: MyAutoSizeText(
+                                      key: UniqueKey(),
+                                      getTitle(currentSong),
+                                      maxLines: 1,
+                                      textStyle: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 20,
+                                        color:
+                                            lyricsPageHighlightTextColor.value,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                SizedBox(
+                                  height: 28,
+                                  child: Center(
+                                    child: MyAutoSizeText(
+                                      key: UniqueKey(),
+                                      '${getArtist(currentSong)} - ${getAlbum(currentSong)}',
+                                      maxLines: 1,
+                                      textStyle: TextStyle(
+                                        fontSize: 14,
+                                        color: lyricsPageForegroundColor.value,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: 30),
+                        ],
+                      ),
+                      SizedBox(height: 10),
+
+                      Expanded(
+                        child: PageView(
+                          children: [
+                            artPage(context, currentSong),
+                            expandedLyricsPage(context, currentSong),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
-              ValueListenableBuilder(
-                valueListenable: lyricsPageBackgroundColor.valueNotifier,
-                builder: (context, value, child) {
-                  return Container(color: value, child: child);
-                },
-                child: Column(
-                  children: [
-                    SizedBox(height: 50),
-                    Row(
-                      children: [
-                        SizedBox(width: 30),
-                        Expanded(
-                          child: Column(
-                            children: [
-                              SizedBox(
-                                height: 36,
-                                child: Center(
-                                  child: ValueListenableBuilder(
-                                    valueListenable:
-                                        lyricsPageHighlightTextColor
-                                            .valueNotifier,
-                                    builder: (context, value, child) {
-                                      return MyAutoSizeText(
-                                        key: UniqueKey(),
-                                        getTitle(currentSong),
-                                        maxLines: 1,
-                                        textStyle: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 20,
-                                          color: value,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-
-                              SizedBox(
-                                height: 28,
-                                child: Center(
-                                  child: ValueListenableBuilder(
-                                    valueListenable:
-                                        lyricsPageForegroundColor.valueNotifier,
-                                    builder: (context, value, child) {
-                                      return MyAutoSizeText(
-                                        key: UniqueKey(),
-                                        '${getArtist(currentSong)} - ${getAlbum(currentSong)}',
-                                        maxLines: 1,
-                                        textStyle: TextStyle(
-                                          fontSize: 14,
-                                          color: value,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        SizedBox(width: 30),
-                      ],
-                    ),
-                    SizedBox(height: 10),
-
-                    Expanded(
-                      child: PageView(
-                        children: [
-                          artPage(context, currentSong),
-                          expandedLyricsPage(context, currentSong),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },

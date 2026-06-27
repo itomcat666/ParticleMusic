@@ -20,6 +20,7 @@ extension _LicensePage on _LicenseLayerState {
       automaticallyImplyLeading: false,
       leading: customAppBarLeading(context, label: 'settings'),
       backgroundColor: Colors.transparent,
+      systemOverlayStyle: mainPageThemeNotifier.value == .dark ? .light : .dark,
       scrolledUnderElevation: 0,
       actions: [
         MySearchField(

@@ -11,7 +11,9 @@ extension _ArtistsPage on _ArtistsLayerState {
         automaticallyImplyLeading: false,
         leading: customAppBarLeading(context),
         backgroundColor: Colors.transparent,
-
+        systemOverlayStyle: mainPageThemeNotifier.value == .dark
+            ? .light
+            : .dark,
         scrolledUnderElevation: 0,
         title: Text(l10n.artists),
         centerTitle: true,

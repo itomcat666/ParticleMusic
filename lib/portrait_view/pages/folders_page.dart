@@ -11,6 +11,9 @@ extension FoldersPage on FoldersLayer {
         automaticallyImplyLeading: false,
         leading: customAppBarLeading(context),
         backgroundColor: Colors.transparent,
+        systemOverlayStyle: mainPageThemeNotifier.value == .dark
+            ? .light
+            : .dark,
         elevation: 0,
         scrolledUnderElevation: 0,
         title: Text(l10n.folders),
