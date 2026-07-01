@@ -5,13 +5,13 @@ import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/asset_images.dart';
 import 'package:sylvakru/base/services/interaction.dart';
 import 'package:sylvakru/base/widgets/cover_art_widget.dart';
-import 'package:sylvakru/base/widgets/my_auto_size_text.dart';
 import 'package:sylvakru/base/widgets/play_queue_sheet.dart';
 import 'package:sylvakru/base/utils/dynamic_lyrics_page_route.dart';
 import 'package:sylvakru/layer/layers_manager.dart';
 import 'package:sylvakru/layer/lyrics_page_layer.dart';
 import 'package:sylvakru/base/utils/metadata_utils.dart';
 import 'package:smooth_corner/smooth_corner.dart';
+import 'package:text_scroll/text_scroll.dart';
 
 class PlayBar extends StatelessWidget {
   const PlayBar({super.key});
@@ -84,11 +84,12 @@ class PlayBar extends StatelessWidget {
 
                   const SizedBox(width: 10),
                   Expanded(
-                    child: MyAutoSizeText(
+                    child: TextScroll(
                       "${getTitle(currentSong)} - ${getArtist(currentSong)}",
-                      key: ValueKey(currentSong),
-                      maxLines: 1,
-                      textStyle: TextStyle(fontSize: 16),
+                      velocity: const Velocity(pixelsPerSecond: Offset(40, 0)),
+                      style: TextStyle(fontSize: 16),
+                      intervalSpaces: 10,
+                      pauseBetween: Duration(seconds: 1),
                     ),
                   ),
 

@@ -10,7 +10,6 @@ import 'package:sylvakru/base/asset_images.dart';
 import 'package:sylvakru/base/services/interaction.dart';
 import 'package:sylvakru/base/widgets/buttons.dart';
 import 'package:sylvakru/base/widgets/cover_art_widget.dart';
-import 'package:sylvakru/base/widgets/my_auto_size_text.dart';
 import 'package:sylvakru/base/data/setting.dart';
 import 'package:sylvakru/landscape_view/speaker.dart';
 import 'package:sylvakru/landscape_view/title_bar.dart';
@@ -19,6 +18,7 @@ import 'package:sylvakru/base/widgets/lyric_list_view.dart';
 import 'package:sylvakru/base/widgets/seekbar.dart';
 import 'package:sylvakru/base/my_audio_metadata.dart';
 import 'package:sylvakru/base/utils/metadata_utils.dart';
+import 'package:text_scroll/text_scroll.dart';
 
 class LandscapeLyricsPage extends StatefulWidget {
   const LandscapeLyricsPage({super.key});
@@ -267,22 +267,22 @@ class _LandscapeLyricsPageState extends State<LandscapeLyricsPage> {
           width: width - 30,
 
           height: 36,
-          child: Center(
-            child: ValueListenableBuilder(
-              valueListenable: lyricsPageHighlightTextColor.valueNotifier,
-              builder: (context, value, child) {
-                return MyAutoSizeText(
-                  key: UniqueKey(),
-                  getTitle(currentSong),
-                  maxLines: 1,
-                  textStyle: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                    color: value,
-                  ),
-                );
-              },
-            ),
+          child: ValueListenableBuilder(
+            valueListenable: lyricsPageHighlightTextColor.valueNotifier,
+            builder: (context, value, child) {
+              return TextScroll(
+                textAlign: .center,
+                getTitle(currentSong),
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  color: value,
+                ),
+                velocity: const .new(pixelsPerSecond: .new(40, 0)),
+                intervalSpaces: 10,
+                pauseBetween: Duration(seconds: 1),
+              );
+            },
           ),
         ),
 
@@ -290,18 +290,18 @@ class _LandscapeLyricsPageState extends State<LandscapeLyricsPage> {
           width: width - 30,
 
           height: 28,
-          child: Center(
-            child: ValueListenableBuilder(
-              valueListenable: lyricsPageForegroundColor.valueNotifier,
-              builder: (context, value, child) {
-                return MyAutoSizeText(
-                  key: UniqueKey(),
-                  '${getArtist(currentSong)} - ${getAlbum(currentSong)}',
-                  maxLines: 1,
-                  textStyle: TextStyle(fontSize: 14, color: value),
-                );
-              },
-            ),
+          child: ValueListenableBuilder(
+            valueListenable: lyricsPageForegroundColor.valueNotifier,
+            builder: (context, value, child) {
+              return TextScroll(
+                textAlign: .center,
+                '${getArtist(currentSong)} - ${getAlbum(currentSong)}',
+                style: TextStyle(fontSize: 14, color: value),
+                velocity: const .new(pixelsPerSecond: .new(40, 0)),
+                intervalSpaces: 10,
+                pauseBetween: Duration(seconds: 1),
+              );
+            },
           ),
         ),
 

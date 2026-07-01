@@ -5,7 +5,6 @@ import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/asset_images.dart';
 import 'package:sylvakru/base/services/interaction.dart';
 import 'package:sylvakru/base/utils/source_type.dart';
-import 'package:sylvakru/base/widgets/my_auto_size_text.dart';
 import 'package:sylvakru/base/widgets/my_divider.dart';
 import 'package:sylvakru/base/widgets/playlist_widgets.dart';
 import 'package:sylvakru/base/data/folder.dart';
@@ -126,23 +125,7 @@ class SelectableSongListPageState extends State<SelectableSongListPage> {
     return MySheet(
       Column(
         children: [
-          ListTile(
-            title: SizedBox(
-              height: 40,
-              width: MediaQuery.widthOf(context) * 0.9,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: MyAutoSizeText(
-                      l10n.select,
-                      maxLines: 1,
-                      textStyle: TextStyle(fontSize: 15),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          ListTile(title: Text(l10n.select, style: TextStyle(fontSize: 15))),
           MyDivider(thickness: 0.5, height: 1, color: dividerColor),
 
           if (!isRanking && !isRecently)
