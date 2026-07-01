@@ -21,14 +21,10 @@ class _PortraitViewState extends State<PortraitView>
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
 
+  late Animation<Offset> _bottomSlideAnimation;
+
   void slideBegin() {
     _controller.forward(from: 0);
-  }
-
-  void statusListener(AnimationStatus status) {
-    if (status != .completed) {
-      return;
-    }
   }
 
   @override
@@ -37,17 +33,26 @@ class _PortraitViewState extends State<PortraitView>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 300),
     );
-
-    _controller.addStatusListener(statusListener);
 
     _slideAnimation =
         Tween<Offset>(
           begin: Offset(Platform.isIOS ? 1.0 : -1.0, 0.0),
           end: Offset.zero,
         ).animate(
-          CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic),
+          CurvedAnimation(
+            parent: _controller,
+            curve: const Cubic(0.25, 0.10, 0.25, 1.0),
+          ),
+        );
+
+    _bottomSlideAnimation =
+        Tween<Offset>(begin: Offset.zero, end: Offset(-1 / 3, 0)).animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: const Cubic(0.25, 0.10, 0.25, 1.0),
+          ),
         );
 
     layersManager.switchNotifier.addListener(slideBegin);
@@ -56,8 +61,8 @@ class _PortraitViewState extends State<PortraitView>
 
   @override
   void dispose() {
-    _controller.removeStatusListener(statusListener);
     layersManager.switchNotifier.removeListener(slideBegin);
+    _controller.dispose();
     super.dispose();
   }
 
@@ -97,13 +102,19 @@ class _PortraitViewState extends State<PortraitView>
                   children: [
                     ...layersManager.rootPageMap.values
                         .where((page) => page != layersManager.topRootPage)
-                        .map(
-                          (page) => Visibility(
-                            visible: page == layersManager.bottomRootPage,
+                        .map((page) {
+                          final visible = page == layersManager.bottomRootPage;
+                          return Visibility(
+                            visible: visible,
                             maintainState: true,
-                            child: page,
-                          ),
-                        ),
+                            child: visible && Platform.isIOS
+                                ? SlideTransition(
+                                    position: _bottomSlideAnimation,
+                                    child: page,
+                                  )
+                                : page,
+                          );
+                        }),
 
                     SlideTransition(
                       position: _slideAnimation,
