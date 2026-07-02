@@ -442,6 +442,10 @@ class _UsbAudioDetectedSheetState extends State<_UsbAudioDetectedSheet> {
                           }
                         });
                       },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: foreground,
+                        side: BorderSide(color: foreground.withAlpha(90)),
+                      ),
                       child: Text(l10n.viewLink),
                     ),
                   ),

@@ -26,6 +26,8 @@ import 'package:sylvakru/portrait_view/custom_appbar_leading.dart';
 part '../portrait_view/pages/audio_output_settings_page.dart';
 part '../landscape_view/panels/audio_output_settings_panel.dart';
 
+final audioOutputVisibleNotifier = ValueNotifier(true);
+
 enum AudioOutputSettingsPageKind { overview, fixedSampleRate, dsdMode }
 
 enum _TransportHealth { idle, paused, stable, low, underrun }
@@ -102,7 +104,23 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
     if (isTooNarrow(context)) {
       return pageView(context);
     }
-    return panelView(context);
+
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        settingsVisibleNotifier,
+        audioOutputVisibleNotifier,
+      ]),
+      builder: (context, _) {
+        // overview 在 audioOutputVisibleNotifier 为真时显示；固定采样率/DSD 深层页压栈后
+        // 该 notifier 置假，overview 隐藏、深层页显示，避免横屏底层残留。
+        final visible =
+            widget.pageKind == AudioOutputSettingsPageKind.overview
+            ? !settingsVisibleNotifier.value && audioOutputVisibleNotifier.value
+            : !settingsVisibleNotifier.value &&
+                  !audioOutputVisibleNotifier.value;
+        return Opacity(opacity: visible ? 1 : 0, child: panelView(context));
+      },
+    );
   }
 
   String get _title {
@@ -383,10 +401,13 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                     ),
                     const SizedBox(width: 4),
                     _refreshingStatus
-                        ? const SizedBox(
+                        ? SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: iconColor.value,
+                            ),
                           )
                         : IconButton(
                             tooltip: _l10n.refreshUsbStatus,
@@ -877,17 +898,20 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                   ),
                 ],
               ),
-              Slider(
-                value: sliderValue,
-                min: 0,
-                max: 1,
-                divisions: 100,
-                label: '$percent%',
-                onChanged: (next) {
-                  volumeNotifier.value = next;
-                  _setPlayerVolumeIfReady(next);
-                },
-                onChangeEnd: (_) => setting.save(),
+              SliderTheme(
+                data: _sliderThemeData(context),
+                child: Slider(
+                  value: sliderValue,
+                  min: 0,
+                  max: 1,
+                  divisions: 100,
+                  label: '$percent%',
+                  onChanged: (next) {
+                    volumeNotifier.value = next;
+                    _setPlayerVolumeIfReady(next);
+                  },
+                  onChangeEnd: (_) => setting.save(),
+                ),
               ),
             ],
           ),
@@ -915,7 +939,11 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
       leading: _iconBox(icon, const Color(0xFFFF6868), compact: true),
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: TextButton(onPressed: onTap, child: Text(actionLabel)),
+      trailing: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(foregroundColor: highlightTextColor.value),
+        child: Text(actionLabel),
+      ),
     );
   }
 
@@ -930,7 +958,11 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
       leading: _iconBox(icon, highlightTextColor.value, compact: true),
       title: Text(title),
       subtitle: Text(subtitle),
-      trailing: TextButton(onPressed: onTap, child: Text(actionLabel)),
+      trailing: TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(foregroundColor: highlightTextColor.value),
+        child: Text(actionLabel),
+      ),
     );
   }
 
@@ -978,23 +1010,38 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                   ),
                 ],
               ),
-              Slider(
-                value: sliderValue,
-                min: min,
-                max: max,
-                divisions: divisions,
-                label: '${sliderValue.round()} ms',
-                onChanged: (next) {
-                  final rounded = next.round();
-                  notifier.value = rounded;
-                  onChanged?.call(rounded);
-                },
-                onChangeEnd: (_) => setting.save(),
+              SliderTheme(
+                data: _sliderThemeData(context),
+                child: Slider(
+                  value: sliderValue,
+                  min: min,
+                  max: max,
+                  divisions: divisions,
+                  label: '${sliderValue.round()} ms',
+                  onChanged: (next) {
+                    final rounded = next.round();
+                    notifier.value = rounded;
+                    onChanged?.call(rounded);
+                  },
+                  onChangeEnd: (_) => setting.save(),
+                ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  SliderThemeData _sliderThemeData(BuildContext context) {
+    final accent = iconColor.value;
+    return SliderTheme.of(context).copyWith(
+      activeTrackColor: accent,
+      inactiveTrackColor: accent.withAlpha(40),
+      thumbColor: accent,
+      overlayColor: accent.withAlpha(30),
+      valueIndicatorColor: accent,
+      valueIndicatorTextStyle: TextStyle(color: menuColor.value),
     );
   }
 
@@ -1291,6 +1338,10 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () => _copyReport(report),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: textColor.value,
+                          side: BorderSide(color: textColor.value.withAlpha(60)),
+                        ),
                         icon: const Icon(Icons.copy_rounded, size: 18),
                         label: Text(_l10n.copyToClipboard),
                       ),
@@ -1299,6 +1350,10 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                     Expanded(
                       child: FilledButton.icon(
                         onPressed: () => _exportReport(report),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: highlightTextColor.value,
+                          foregroundColor: menuColor.value,
+                        ),
                         icon: const Icon(Icons.save_alt_rounded, size: 18),
                         label: Text(_l10n.exportToFile),
                       ),
