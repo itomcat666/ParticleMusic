@@ -8,6 +8,7 @@ import 'package:sylvakru/base/services/color_manager.dart';
 import 'package:sylvakru/base/app.dart';
 import 'package:sylvakru/base/asset_images.dart';
 import 'package:sylvakru/base/services/interaction.dart';
+import 'package:sylvakru/base/utils/dynamic_lyrics_page_route.dart';
 import 'package:sylvakru/base/widgets/buttons.dart';
 import 'package:sylvakru/base/widgets/cover_art_widget.dart';
 import 'package:sylvakru/base/widgets/my_divider.dart';
@@ -55,6 +56,12 @@ class _PortraitLyricsPageState extends State<PortraitLyricsPage> {
     final screenHeight = MediaQuery.of(context).size.height;
 
     return GestureDetector(
+      onVerticalDragStart: (_) {
+        final route = ModalRoute.of(context);
+        if (route is DynamicLyricsPageRoute) {
+          route.revealRoutesBelow();
+        }
+      },
       onVerticalDragUpdate: (details) {
         _animationDuration = 0;
         dragOffsetNotifier.value += details.delta.dy;
@@ -81,7 +88,14 @@ class _PortraitLyricsPageState extends State<PortraitLyricsPage> {
           return AnimatedContainer(
             duration: Duration(milliseconds: _animationDuration),
             curve: Curves.easeOutCubic,
-
+            onEnd: () {
+              if (value == 0.0) {
+                final route = ModalRoute.of(context);
+                if (route is DynamicLyricsPageRoute) {
+                  route.concealRoutesBelow();
+                }
+              }
+            },
             transform: Matrix4.translationValues(0, value, 0),
             child: child,
           );

@@ -27,6 +27,18 @@ class _PortraitViewState extends State<PortraitView>
     _controller.forward(from: 0);
   }
 
+  void statusListener(AnimationStatus status) {
+    if (status != .completed) {
+      return;
+    }
+    if (layersManager.bottomRootPage != null) {
+      layersManager.bottomRootPage = null;
+      if (mounted) {
+        setState(() {});
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +47,8 @@ class _PortraitViewState extends State<PortraitView>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+
+    _controller.addStatusListener(statusListener);
 
     _slideAnimation =
         Tween<Offset>(

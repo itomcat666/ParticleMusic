@@ -2,13 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:sylvakru/base/utils/media_query.dart';
 
 class DynamicLyricsPageRoute<T> extends PageRouteBuilder<T> {
-  DynamicLyricsPageRoute({required super.pageBuilder}) : super(opaque: false);
+  DynamicLyricsPageRoute({required super.pageBuilder});
 
   @override
   Duration get transitionDuration => const Duration(milliseconds: 500);
 
   @override
   Duration get reverseTransitionDuration => const Duration(milliseconds: 500);
+
+  void revealRoutesBelow() {
+    if (overlayEntries.isNotEmpty) {
+      overlayEntries.first.opaque = false;
+    }
+  }
+
+  void concealRoutesBelow() {
+    if (overlayEntries.isNotEmpty &&
+        animation != null &&
+        animation!.isCompleted) {
+      overlayEntries.first.opaque = true;
+    }
+  }
 
   @override
   Widget buildTransitions(

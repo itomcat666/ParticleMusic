@@ -86,6 +86,7 @@ class PlayBar extends StatelessWidget {
                   Expanded(
                     child: TextScroll(
                       "${getTitle(currentSong)} - ${getArtist(currentSong)}",
+                      key: ValueKey(currentSong),
                       velocity: const Velocity(pixelsPerSecond: Offset(40, 0)),
                       style: TextStyle(fontSize: 16),
                       intervalSpaces: 10,
