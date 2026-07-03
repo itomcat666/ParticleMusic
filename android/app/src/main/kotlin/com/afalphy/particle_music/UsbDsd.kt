@@ -395,6 +395,23 @@ class DsdFileReader private constructor(
 }
 
 /**
+ * DSD 字节流编码器的统一口径（DoP / Native DSD 共用）：输入都是 DsdFileReader 的
+ * MSB-first 逐字节交错流，输出都交给 PcmIsoPacketizer 当普通 PCM 帧打包。
+ * 会话级静音填充线程与写线程只依赖这三个方法，两种模式行为一致：
+ * 静音一律 0x69，流一旦中断 DAC 就会掉出 DSD 模式（爆音/电流声）。
+ */
+interface DsdStreamEncoder {
+    /** 编码 [data] 的前 [length] 字节，不足一帧的余量留到下次。 */
+    fun encode(data: ByteArray, length: Int = data.size): ByteArray
+
+    /** 生成 [frames] 帧 DSD 静音（0x69）。 */
+    fun encodeSilence(frames: Int): ByteArray
+
+    /** 把不足一帧的余量用 0x69 补齐成完整帧输出（无余量时返回空数组）。 */
+    fun drain(): ByteArray
+}
+
+/**
  * 把 DsdFileReader 输出的交错 DSD 字节流封装成 DoP 24-bit PCM 采样流（小端，每采样 3 字节）。
  * 每帧每声道取 2 个连续 DSD 字节：sample24 = (marker shl 16) or (先到字节 shl 8) or 后到字节；
  * 标记逐帧在 0x05/0xFA 间交替，同一帧内各声道用相同标记。
@@ -402,14 +419,13 @@ class DsdFileReader private constructor(
  * 24→32 slot 的高位对齐移位恰好得到规范要求的"DoP 24 位放高位、低 8 位补零"。
  * 注意：DoP 数据被任何后续 DSP（音量、抖动、重采样）修改都会破坏标记、输出全幅噪声。
  */
-class DopPacketizer(private val channels: Int) {
+class DopPacketizer(private val channels: Int) : DsdStreamEncoder {
     private val frameBytes = 2 * channels
     private var marker = 0x05
     private val carry = ByteArray(frameBytes)
     private var carryLength = 0
 
-    /** 编码 [data] 的前 [length] 字节，不足一帧的余量留到下次。 */
-    fun encode(data: ByteArray, length: Int = data.size): ByteArray {
+    override fun encode(data: ByteArray, length: Int): ByteArray {
         val total = carryLength + length
         val frames = total / frameBytes
         val output = ByteArray(frames * channels * 3)
@@ -442,8 +458,8 @@ class DopPacketizer(private val channels: Int) {
         return output
     }
 
-    /** 生成 [frames] 帧 DoP 静音（payload 0x69 0x69，标记正常交替）。 */
-    fun encodeSilence(frames: Int): ByteArray {
+    /** DoP 静音：payload 0x69 0x69，标记正常交替。 */
+    override fun encodeSilence(frames: Int): ByteArray {
         val output = ByteArray(frames * channels * 3)
         var outputOffset = 0
         val silence = DSD_SILENCE_BYTE.toByte()
@@ -459,8 +475,7 @@ class DopPacketizer(private val channels: Int) {
         return output
     }
 
-    /** 文件结尾：把不足一帧的余量用 0x69 补齐成完整帧输出（无余量时返回空数组）。 */
-    fun drain(): ByteArray {
+    override fun drain(): ByteArray {
         if (carryLength == 0) {
             return ByteArray(0)
         }
@@ -475,6 +490,79 @@ class DopPacketizer(private val channels: Int) {
     }
 
     // 逻辑上 carry 与 data 是拼接的一段流，按拼接后的下标取字节
+    private fun byteAt(data: ByteArray, index: Int): Byte {
+        return if (index < carryLength) carry[index] else data[index - carryLength]
+    }
+}
+
+/** quirk `nativeDsd.format` → 每声道每帧字节数；未知格式返回 null。 */
+fun nativeDsdBytesPerSample(format: String?): Int? = when (format) {
+    "u8" -> 1
+    "u16le" -> 2
+    "u32le", "u32be" -> 4
+    else -> null
+}
+
+/**
+ * Native DSD 打包：把交错 DSD 字节流按设备期望的 subslot 排列重组，直接当
+ * "bitDepth = subslot 位宽的 PCM" 交给 PcmIsoPacketizer（帧率 = DSD 速率 ÷ 8 ÷ 每采样字节数），
+ * 无 DoP 标记、无任何数据修改，纯字节重排（对应 ALSA DSD_U8/U16_LE/U32_LE/U32_BE 语义）：
+ * - LE：subslot 内存序 = 时间序（最早的字节在前）；
+ * - BE：LSB（最早字节）在 word 高地址，subslot 组内字节倒序。
+ * 静音同样是 0x69（重排后仍是 0x69），流中断一样会让 DAC 掉出 DSD 模式。
+ */
+class NativeDsdPacketizer(
+    private val channels: Int,
+    private val bytesPerSample: Int,
+    private val bigEndian: Boolean,
+) : DsdStreamEncoder {
+    private val frameBytes = bytesPerSample * channels
+    private val carry = ByteArray(frameBytes)
+    private var carryLength = 0
+
+    override fun encode(data: ByteArray, length: Int): ByteArray {
+        val total = carryLength + length
+        val frames = total / frameBytes
+        val output = ByteArray(frames * frameBytes)
+        var outputOffset = 0
+        var consumed = 0
+        repeat(frames) {
+            // 交错流 L0 R0 L1 R1… → 每声道连续 bytesPerSample 字节（LE 时间正序 / BE 倒序）
+            for (channel in 0 until channels) {
+                for (sampleIndex in 0 until bytesPerSample) {
+                    val slotIndex = if (bigEndian) bytesPerSample - 1 - sampleIndex else sampleIndex
+                    output[outputOffset + channel * bytesPerSample + slotIndex] =
+                        byteAt(data, consumed + sampleIndex * channels + channel)
+                }
+            }
+            consumed += frameBytes
+            outputOffset += frameBytes
+        }
+
+        val leftover = total - frames * frameBytes
+        if (leftover > 0) {
+            val tail = ByteArray(leftover)
+            for (index in 0 until leftover) {
+                tail[index] = byteAt(data, frames * frameBytes + index)
+            }
+            System.arraycopy(tail, 0, carry, 0, leftover)
+        }
+        carryLength = leftover
+        return output
+    }
+
+    override fun encodeSilence(frames: Int): ByteArray {
+        return ByteArray(frames * frameBytes) { DSD_SILENCE_BYTE.toByte() }
+    }
+
+    override fun drain(): ByteArray {
+        if (carryLength == 0) {
+            return ByteArray(0)
+        }
+        val padding = ByteArray(frameBytes - carryLength) { DSD_SILENCE_BYTE.toByte() }
+        return encode(padding)
+    }
+
     private fun byteAt(data: ByteArray, index: Int): Byte {
         return if (index < carryLength) carry[index] else data[index - carryLength]
     }

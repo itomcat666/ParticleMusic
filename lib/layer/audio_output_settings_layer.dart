@@ -819,11 +819,16 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
           builder: (context, exclusive, _) {
             final channel = _channelCountLabel(status);
             // DoP 独占时端点收到的是封装 DSD 的 24-bit PCM 帧（帧率 = DSD 速率 ÷ 16），
-            // 不能按源文件的 DSD 速率 / 1-bit 展示
+            // 不能按源文件的 DSD 速率 / 1-bit 展示；Native 独占时端点收到的就是
+            // 原始 1-bit DSD 流，直接按 DSD 速率展示
             final dopActive =
                 exclusive.active &&
                 exclusive.sampleRate != null &&
                 (exclusive.format?.contains('(DoP)') ?? false);
+            final nativeActive =
+                exclusive.active &&
+                exclusive.sampleRate != null &&
+                (exclusive.format?.contains('(Native)') ?? false);
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
               child: Column(
@@ -837,12 +842,18 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                   ]),
                   const SizedBox(height: 24),
                   _formatMetricRow(_l10n.dacEndpoint, [
-                    dopActive ? 'DoP' : 'PCM',
-                    dopActive
+                    nativeActive ? 'DSD' : (dopActive ? 'DoP' : 'PCM'),
+                    nativeActive
+                        ? formatSampleRate(exclusive.sampleRate, _l10n)
+                        : dopActive
                         ? formatSampleRate(exclusive.sampleRate! ~/ 16, _l10n)
                         : formatOutputSampleRate(status, _l10n),
                     channel,
-                    dopActive ? '24-bit' : _compactDepthLabel(status),
+                    nativeActive
+                        ? '1-bit'
+                        : dopActive
+                        ? '24-bit'
+                        : _compactDepthLabel(status),
                   ]),
                 ],
               ),

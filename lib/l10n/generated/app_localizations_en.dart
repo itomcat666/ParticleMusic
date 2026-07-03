@@ -870,7 +870,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dsdNativeDesc =>
-      'Keep the native DSD path; requires low-level support';
+      'Sends raw DSD when the device declares RAW_DATA or a quirk sets the layout; falls back to DoP otherwise';
 
   @override
   String get volumeLockDsdOnly => 'Lock DSD volume only';

@@ -271,7 +271,7 @@
   "dsdOutputStrategy": "DSD 输出策略",
   "dsdToPcm": "由解码器转为 PCM，走系统输出（兼容性最好）",
   "dsdToPcmDesc": "以 PCM 帧封装 DSD，设备支持时使用",
-  "dsdNativeDesc": "保留 Native DSD 策略，需要底层链路支持",
+  "dsdNativeDesc": "设备声明 RAW_DATA 或 quirk 指定字节排列时直发 DSD，否则自动回退 DoP",
   "volumeLockDsdOnly": "只锁 DSD 音量",
   "volumeLockAlways": "始终锁定",
   "sourceFile": "源文件",

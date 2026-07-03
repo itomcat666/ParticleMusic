@@ -14,9 +14,9 @@
 | USB 独占播放状态 | 已接入快照 | `UsbExclusivePlaybackState` 会由 start/pause/resume/seek/stop 等 native 调用回传，页面监听这个 notifier 展示当前快照。它不是连续实时水位。 |
 | 后台保活 | 已接入偏好 | 偏好已持久化，并用于 App 内 USB 输出策略判断；是否能完全防止系统杀后台取决于系统电池策略。 |
 | 播放后释放 USB 带宽 | 已接入偏好 | 偏好已保存，供停止播放后释放 USB 资源策略使用。 |
-| DSD 模式和 DSD 转 PCM 采样率 | 部分接入 | `.dsf/.dff` 已进曲库（`dsd_metadata.dart` 手工解析头部与 DSF 尾部 ID3）。`PCM` 模式：DSD 文件不进独占，由共享路径（mpv）解码转 PCM，DSD64/128/256/512 转 PCM 目标采样率作为系统 preferred output 请求生效。`DoP` 模式：独占链路已实现（`DsdFileReader`→`DopPacketizer`→ISO 打包，时钟设为 DSD 速率÷16，需设备提供 24/32-bit alt），暂停发 DoP 封装的 0x69 静音、seek 丢弃在途 URB。`Native` 暂未实现，选中时引擎报不支持并回退。 |
+| DSD 模式和 DSD 转 PCM 采样率 | 部分接入 | `.dsf/.dff` 已进曲库（`dsd_metadata.dart` 手工解析头部与 DSF 尾部 ID3）。`PCM` 模式：DSD 文件不进独占，由共享路径（mpv）解码转 PCM，DSD64/128/256/512 转 PCM 目标采样率作为系统 preferred output 请求生效。`DoP` 模式：独占链路已实现（`DsdFileReader`→`DopPacketizer`→ISO 打包，时钟设为 DSD 速率÷16，需设备提供 24/32-bit alt），暂停发 DoP 封装的 0x69 静音、seek/切歌不断流。`Native` 模式：描述符声明 RAW_DATA alt（UAC2 bmFormats D31）或 quirk 指定 `nativeDsd.format` 时按字节排列（u8/u16le/u32le/u32be）直发原始 DSD（时钟 SET_CUR 为 DSD 字节率=速率÷8），判定失败自动降级 DoP 并在 state message 注明原因；会话级编码器/空窗静音填充/不 flush 策略与 DoP 一致。真机验证待做（当前 Macaron 描述符未声明 RAW_DATA，需 quirk 或换设备验证）。 |
 | 音量锁定和 DSD 增益补偿 | 已接入偏好 | 设置已持久化，供播放链路读取；硬件音量实时检测暂未接入。 |
-| DAC quirk 配置 | 已接入 | 内置 `assets/usb_dac_quirks.json` + 本地 override（设置页"导入 quirk 配置"粘贴 JSON），`vid:pid` 精确 → `vid:*` 厂商 → 默认三级匹配。当前生效字段：`dop.supported/maxDsd`（DoP 判定）、`clock.setCurDelayMs/skipGetCurValidation`（时钟配置）；`nativeDsd.*` 已解析、待 Native DSD 实现后接入。诊断报告含 quirk 匹配结果与加载错误。 |
+| DAC quirk 配置 | 已接入 | 内置 `assets/usb_dac_quirks.json` + 本地 override（设置页"导入 quirk 配置"粘贴 JSON），`vid:pid` 精确 → `vid:*` 厂商 → 默认三级匹配。当前生效字段：`dop.supported/maxDsd`（DoP 判定）、`clock.setCurDelayMs/skipGetCurValidation`（时钟配置）；`nativeDsd.format/maxDsd`（Native DSD 排列与上限判定）。诊断报告含 quirk 匹配结果、加载错误与各 alt 的 RAW_DATA 标记。 |
 | 云端来源独占策略 | 已接入（待真机验证） | Navidrome/WebDAV/Emby 未缓存曲目：后台下载缓存，约 10 秒水位且下载速度跟得上时用 `.part` 文件流式独占（引擎按增长中的文件读取，数据没跟上时 PCM 按暂停处理、DoP 垫 0x69 静音，不断流不爆音）；4 秒内达不到水位回退共享流式立即出声。独占开启时预取队列下一首云端歌曲，连播场景直接整首缓存走独占。 |
 
 ## 参考或占位项

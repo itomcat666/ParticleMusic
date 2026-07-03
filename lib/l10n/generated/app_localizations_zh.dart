@@ -846,7 +846,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dsdToPcmDesc => '以 PCM 帧封装 DSD，设备支持时使用';
 
   @override
-  String get dsdNativeDesc => '保留 Native DSD 策略，需要底层链路支持';
+  String get dsdNativeDesc => '设备声明 RAW_DATA 或 quirk 指定字节排列时直发 DSD，否则自动回退 DoP';
 
   @override
   String get volumeLockDsdOnly => '只锁 DSD 音量';

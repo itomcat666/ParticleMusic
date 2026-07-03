@@ -1733,7 +1733,7 @@ abstract class AppLocalizations {
   /// No description provided for @dsdNativeDesc.
   ///
   /// In en, this message translates to:
-  /// **'Keep the native DSD path; requires low-level support'**
+  /// **'Sends raw DSD when the device declares RAW_DATA or a quirk sets the layout; falls back to DoP otherwise'**
   String get dsdNativeDesc;
 
   /// No description provided for @volumeLockDsdOnly.

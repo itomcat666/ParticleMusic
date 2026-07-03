@@ -345,6 +345,64 @@ class UsbDsdTest {
         }
     }
 
+    // ---- Native DSD ----
+
+    @Test
+    fun nativeU32leGroupsPerChannelBytesInTimeOrder() {
+        val packetizer = NativeDsdPacketizer(2, 4, bigEndian = false)
+        // 交错流 L0 R0 L1 R1 L2 R2 L3 R3
+        val output = packetizer.encode(
+            byteArrayOf(0x01, 0x11, 0x02, 0x12, 0x03, 0x13, 0x04, 0x14),
+        )
+        // u32le：每声道连续 4 字节按时间正序 [L0..L3][R0..R3]
+        assertArrayEquals(
+            byteArrayOf(0x01, 0x02, 0x03, 0x04, 0x11, 0x12, 0x13, 0x14),
+            output,
+        )
+    }
+
+    @Test
+    fun nativeU32beReversesBytesWithinSlot() {
+        val packetizer = NativeDsdPacketizer(2, 4, bigEndian = true)
+        val output = packetizer.encode(
+            byteArrayOf(0x01, 0x11, 0x02, 0x12, 0x03, 0x13, 0x04, 0x14),
+        )
+        // u32be：LSB（最早字节）在 word 高地址，组内倒序
+        assertArrayEquals(
+            byteArrayOf(0x04, 0x03, 0x02, 0x01, 0x14, 0x13, 0x12, 0x11),
+            output,
+        )
+    }
+
+    @Test
+    fun nativeU16leCarryAcrossWrites() {
+        val packetizer = NativeDsdPacketizer(2, 2, bigEndian = false)
+        assertEquals(0, packetizer.encode(byteArrayOf(0x01, 0x11, 0x02)).size)
+        assertArrayEquals(
+            byteArrayOf(0x01, 0x02, 0x11, 0x12),
+            packetizer.encode(byteArrayOf(0x12)),
+        )
+    }
+
+    @Test
+    fun nativeSilenceAndDrainUse0x69() {
+        val packetizer = NativeDsdPacketizer(2, 2, bigEndian = false)
+        assertArrayEquals(ByteArray(8) { 0x69 }, packetizer.encodeSilence(2))
+        packetizer.encode(byteArrayOf(0x01, 0x11))
+        assertArrayEquals(byteArrayOf(0x01, 0x69, 0x11, 0x69), packetizer.drain())
+        assertEquals(0, packetizer.drain().size)
+    }
+
+    @Test
+    fun nativeBytesPerSampleMapping() {
+        assertEquals(1, nativeDsdBytesPerSample("u8"))
+        assertEquals(2, nativeDsdBytesPerSample("u16le"))
+        assertEquals(4, nativeDsdBytesPerSample("u32le"))
+        assertEquals(4, nativeDsdBytesPerSample("u32be"))
+        assertNull(nativeDsdBytesPerSample(null))
+        assertNull(nativeDsdBytesPerSample("dop"))
+    }
+
     // ---- 工具 ----
 
     private fun readAll(reader: DsdFileReader): ByteArray {
