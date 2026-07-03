@@ -120,6 +120,50 @@ void main() {
     final path = await writeFile('not_dsd.dsf', 'RIFF0000WAVE'.codeUnits);
     expect(await readDsdMetadata(path), isNull);
   });
+
+  test('DFF 只有头部字节时按远程总长换算时长', () async {
+    const sampleRate = 2822400;
+    const channels = 2;
+    // 每通道 2 秒的数据大小，但本地只落头部 + 少量数据
+    final dataBytes = sampleRate ~/ 8 * 2 * channels;
+
+    final prop = BytesBuilder();
+    prop.add('SND '.codeUnits);
+    prop.add('FS  '.codeUnits);
+    prop.add(_longBe(4));
+    prop.add(_intBe(sampleRate));
+    prop.add('CHNL'.codeUnits);
+    prop.add(_longBe(2 + channels * 4));
+    prop.add(_shortBe(channels));
+    prop.add('SLFTSRGT'.codeUnits);
+    final propBytes = prop.toBytes();
+
+    final body = BytesBuilder();
+    body.add('DSD '.codeUnits);
+    body.add('FVER'.codeUnits);
+    body.add(_longBe(4));
+    body.add(_intBe(0x01050000));
+    body.add('PROP'.codeUnits);
+    body.add(_longBe(propBytes.length));
+    body.add(propBytes);
+    body.add('DSD '.codeUnits);
+    body.add(_longBe(dataBytes));
+    body.add(Uint8List(16)); // 数据只落了 16 字节
+
+    final builder = BytesBuilder();
+    builder.add('FRM8'.codeUnits);
+    builder.add(_longBe(body.length + dataBytes - 16));
+    builder.add(body.toBytes());
+
+    final headOnly = builder.toBytes();
+    final path = await writeFile('head_only.dff', headOnly);
+    final totalLength = headOnly.length + dataBytes - 16;
+
+    final metadata = await readDsdMetadata(path, remoteTotalLength: totalLength);
+    expect(metadata, isNotNull);
+    expect(metadata!.samplerate, sampleRate);
+    expect(metadata.duration, const Duration(seconds: 2));
+  });
 }
 
 Uint8List _buildId3v23(Map<String, String> textFrames) {

@@ -3,13 +3,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:audio_tags_lofty/audio_tags_lofty.dart';
+import 'package:dio/dio.dart';
 
 /// lofty 不支持 DSD 容器，这里手工解析 DSF/DFF 的音频参数：
 /// - DSF（Sony，小端）：`DSD ` → `fmt `（速率/声道/采样数）→ 尾部 ID3v2 标签；
 /// - DFF（Philips，大端 IFF）：`FRM8` 里遍历 `FS  `/`CHNL`/`DSD ` 取参数，无标准标签。
 /// samplerate 存真实 DSD 速率（如 2822400），UI 层据此显示 DSD64/128/…。
+/// [remoteTotalLength]：只下载了头部字节的远程文件传真实总长，DFF 据此换算时长。
 /// 返回 null 表示不是可识别的 DSD 文件。
-Future<AudioMetadata?> readDsdMetadata(String path) async {
+Future<AudioMetadata?> readDsdMetadata(
+  String path, {
+  int? remoteTotalLength,
+}) async {
   final file = File(path);
   if (!await file.exists()) {
     return null;
@@ -24,7 +29,7 @@ Future<AudioMetadata?> readDsdMetadata(String path) async {
       case 'DSD ':
         return await _readDsf(input);
       case 'FRM8':
-        return await _readDff(input);
+        return await _readDff(input, totalLength: remoteTotalLength);
       default:
         return null;
     }
@@ -32,6 +37,56 @@ Future<AudioMetadata?> readDsdMetadata(String path) async {
     return null;
   } finally {
     await input.close();
+  }
+}
+
+/// WebDAV 等远程 DSD 文件：按 Range 只拉头部字节落进临时文件，复用本地解析。
+/// DSF 的音频参数都在文件头（尾部 ID3 标签暂不取，标题回退文件名）；
+/// DFF 的时长按 chunk 头声明的数据大小配合真实文件总长换算。
+Future<AudioMetadata?> readRemoteDsdMetadata(
+  String url, {
+  Map<String, String>? headers,
+}) async {
+  // 256KB 足够覆盖 DSF 的 fmt chunk 与 DFF 的 PROP/CMPR/DSD chunk 头
+  const headBytes = 256 * 1024;
+  final tmpFile = File(
+    '${Directory.systemTemp.path}/dsd_head_${DateTime.now().microsecondsSinceEpoch}',
+  );
+  try {
+    final response = await Dio().get<ResponseBody>(
+      url,
+      options: Options(
+        responseType: ResponseType.stream,
+        headers: {...?headers, 'Range': 'bytes=0-${headBytes - 1}'},
+        validateStatus: (status) => status == 200 || status == 206,
+      ),
+    );
+    // 206 从 Content-Range 的 "bytes 0-x/total" 取总长；服务器忽略 Range
+    // 返回 200 时用 Content-Length，并在写满头部后立即断开
+    final contentRange = response.headers.value('content-range');
+    final totalLength = contentRange != null
+        ? int.tryParse(contentRange.split('/').last)
+        : int.tryParse(response.headers.value('content-length') ?? '');
+    final sink = tmpFile.openWrite();
+    var written = 0;
+    try {
+      await for (final chunk in response.data!.stream) {
+        sink.add(chunk);
+        written += chunk.length;
+        if (written >= headBytes) {
+          break;
+        }
+      }
+    } finally {
+      await sink.close();
+    }
+    return await readDsdMetadata(tmpFile.path, remoteTotalLength: totalLength);
+  } catch (_) {
+    return null;
+  } finally {
+    if (await tmpFile.exists()) {
+      await tmpFile.delete();
+    }
   }
 }
 
@@ -68,8 +123,12 @@ Future<AudioMetadata?> _readDsf(RandomAccessFile input) async {
   return metadata;
 }
 
-Future<AudioMetadata?> _readDff(RandomAccessFile input) async {
-  final length = await input.length();
+Future<AudioMetadata?> _readDff(
+  RandomAccessFile input, {
+  int? totalLength,
+}) async {
+  // 远程头部解析时本地只有前若干 KB，chunk 大小与时长按真实总长换算
+  final length = totalLength ?? await input.length();
   final header = ByteData.sublistView(await input.read(12));
   if (header.lengthInBytes < 12 ||
       String.fromCharCodes(Uint8List.sublistView(header, 8, 12)) != 'DSD ') {

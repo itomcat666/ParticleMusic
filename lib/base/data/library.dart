@@ -511,8 +511,11 @@ class Library {
       try {
         final ext = extension(realPath).toLowerCase();
         if (ext == '.dsf' || ext == '.dff') {
-          // lofty 不支持 DSD 容器，走手工头部解析（仅本地文件）
-          tmp = await readDsdMetadata(realPath);
+          // lofty 不支持 DSD 容器，走手工头部解析；
+          // WebDAV 远程文件按 Range 只拉头部字节解析，不整首下载
+          tmp = isWebdav && realPath == path
+              ? await readRemoteDsdMetadata(path, headers: headers)
+              : await readDsdMetadata(realPath);
         } else {
           tmp = await readMetadataAsync(realPath, false, headers: headers);
         }
