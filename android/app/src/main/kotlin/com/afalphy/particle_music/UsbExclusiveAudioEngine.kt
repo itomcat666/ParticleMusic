@@ -268,9 +268,10 @@ class UsbExclusiveAudioEngine(
             target = sessionTarget!!
             mainHandler.removeCallbacks(deferredCloseRunnable)
             stopDopIdleFiller()
-            if (!workerEndedAtEof) {
-                // 手动切歌才丢在途 URB；自然播完不 flush，缓冲里垫着的静音
-                // 让下一首无缝续上，DoP 标记不断
+            if (!workerEndedAtEof && sessionDop == null) {
+                // PCM 手动切歌丢在途 URB 保响应；DoP 一律不 flush——丢 URB 会
+                // 瞬断 ISO 流让 DAC 掉出 DSD 模式再重锁（咔嗒声），旧缓冲
+                // （约一个水位）放完无缝续上新曲，标记相位全程连续
                 UsbExclusiveNative.flushOutput()?.let { flushError ->
                     UsbDiagnostics.w(tag, "flush on session reuse failed: $flushError")
                 }
@@ -445,9 +446,9 @@ class UsbExclusiveAudioEngine(
     fun stop(): Map<String, Any?> {
         val keepSession = stopWorkerKeepingSession()
         if (keepSession && connection != null) {
-            if (!workerEndedAtEof) {
-                // 手动停止/切歌：丢在途 URB 让停止即时生效；自然播完不 flush，
-                // 缓冲里垫着的静音继续放，DoP 标记不断
+            if (!workerEndedAtEof && sessionDop == null) {
+                // PCM 手动停止/切歌丢在途 URB 让停止即时生效；DoP 一律不
+                // flush（会瞬断 ISO 流让 DAC 掉锁），旧缓冲放完由静音接续
                 UsbExclusiveNative.flushOutput()?.let { flushError ->
                     UsbDiagnostics.w(tag, "flush on stop failed: $flushError")
                 }
@@ -502,6 +503,7 @@ class UsbExclusiveAudioEngine(
             return
         }
         idleFillerRunning.set(true)
+        UsbDiagnostics.i(tag, "DoP idle filler started at $frameRate frames/s")
         val thread = Thread({
             // 单次约 10ms 的量，写满水位由 native 阻塞回收自然限速
             val frames = maxOf(1, frameRate / 100)
@@ -959,15 +961,11 @@ class UsbExclusiveAudioEngine(
 
             while (!stopped.get()) {
                 consumePendingSeekMs()?.let { seekMs ->
-                    // 先丢弃在途 URB 让 seek 立即生效，复位打包器与标记相位后
-                    // 立刻垫一小段静音——文件定位期间标记流不断，DAC 不掉出
-                    // DSD 模式（掉锁再回锁就是 seek 咔嗒声的来源）
-                    UsbExclusiveNative.flushOutput()?.let { flushError ->
-                        UsbDiagnostics.w(tag, "flush before DoP seek failed: $flushError")
-                    }
-                    packetizer.reset()
-                    dop.reset()
-                    packetizer.write(dop.encodeSilence(silenceFramesPerWrite * 3))
+                    // DoP seek 不 flush 也不复位：丢 URB 会瞬断 ISO 流让 DAC
+                    // 掉出 DSD 模式再重锁（就是 seek 咔嗒声）。旧缓冲（约一个
+                    // 水位）放完无缝续上新位置，标记相位全程连续；先把不足
+                    // 一帧的余量补齐保持帧对齐
+                    packetizer.write(dop.drain())
                     val actualMs = reader.seekTo(seekMs)
                     lastPositionEmitMs = -1L
                     updateState(
