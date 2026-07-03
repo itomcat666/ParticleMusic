@@ -221,7 +221,24 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     }
 
     if (wasActive && state.message?.contains('completed') == true) {
-      unawaited(skipToNext());
+      logger.output("usb exclusive completed -> auto advance");
+      debugPrint("usb exclusive completed -> auto advance");
+      // 对齐共享路径 completed 分支的语义：单曲循环重载当前曲、睡眠定时器播完暂停
+      final needPauseTmp = needPause;
+      unawaited(() async {
+        while (isSyncing) {
+          await Future.delayed(Duration(milliseconds: 50));
+        }
+        if (playModeNotifier.value == 2) {
+          // repeat
+          await load();
+        } else {
+          await skipToNext();
+        }
+        if (needPauseTmp) {
+          await pause();
+        }
+      }());
     }
   }
 

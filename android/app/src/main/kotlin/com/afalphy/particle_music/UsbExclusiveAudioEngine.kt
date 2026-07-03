@@ -671,6 +671,7 @@ class UsbExclusiveAudioEngine(
                 }
             }
 
+            UsbDiagnostics.i(tag, "exclusive decode reached end of stream, flushing remainder.")
             packetizer?.flush()
             if (!stopped.get()) {
                 updateState(inactiveState("USB exclusive playback completed."))
@@ -767,6 +768,7 @@ class UsbExclusiveAudioEngine(
                 }
             }
 
+            UsbDiagnostics.i(tag, "exclusive DoP playback reached end of stream.")
             if (!stopped.get()) {
                 updateState(inactiveState("USB exclusive playback completed."))
             }
@@ -919,6 +921,7 @@ class UsbExclusiveAudioEngine(
             extractor.advance()
         }
 
+        UsbDiagnostics.i(tag, "exclusive raw PCM reached end of stream, flushing remainder.")
         packetizer.flush()
         if (!stopped.get()) {
             updateState(inactiveState("USB exclusive playback completed."))
