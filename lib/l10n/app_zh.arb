@@ -264,7 +264,7 @@
   "enableFixedSampleRate": "启用固定采样率",
   "enableFixedSampleRateDesc": "开启后 USB 输出优先使用下方选定采样率。",
   "dsdOutputStrategy": "DSD 输出策略",
-  "dsdToPcm": "将 DSD 转换为 PCM 输出",
+  "dsdToPcm": "由解码器转为 PCM，走系统输出（兼容性最好）",
   "dsdToPcmDesc": "以 PCM 帧封装 DSD，设备支持时使用",
   "dsdNativeDesc": "保留 Native DSD 策略，需要底层链路支持",
   "volumeLockDsdOnly": "只锁 DSD 音量",

@@ -11,6 +11,11 @@ String formatSampleRate(int? sampleRate, AppLocalizations l10n) {
     return l10n.unknown;
   }
 
+  // DSD 速率显示为 DSD64/128/…，而不是 2822.4 kHz
+  if (sampleRate >= 2822400 && sampleRate % 44100 == 0) {
+    return 'DSD${sampleRate ~/ 44100}';
+  }
+
   final khz = sampleRate / 1000.0;
   if (khz == khz.roundToDouble()) {
     return '${khz.round()} kHz';
@@ -886,7 +891,8 @@ String _exclusiveStatusLabel(UsbAudioStatus status, AppLocalizations l10n) {
 String _bitDepthLabel(UsbAudioStatus status, AppLocalizations l10n) {
   final exclusive = usbExclusivePlaybackStateNotifier.value;
   if (exclusive.active && exclusive.bitDepth != null) {
-    return '${exclusive.bitDepth} bits';
+    // DoP 激活时 bitDepth=1（DSD 是 1-bit 流）
+    return exclusive.bitDepth == 1 ? '1 bit' : '${exclusive.bitDepth} bits';
   }
 
   final encoding = status.preferredEncoding ?? status.outputEncoding;

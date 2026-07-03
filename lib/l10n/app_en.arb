@@ -323,7 +323,7 @@
   "enableFixedSampleRate": "Enable fixed sample rate",
   "enableFixedSampleRateDesc": "When on, USB output prefers the selected sample rate below.",
   "dsdOutputStrategy": "DSD output strategy",
-  "dsdToPcm": "Convert DSD to PCM output",
+  "dsdToPcm": "Decoded to PCM via the system output (most compatible)",
   "dsdToPcmDesc": "Wrap DSD in PCM frames; used when the device supports it",
   "dsdNativeDesc": "Keep the native DSD path; requires low-level support",
   "volumeLockDsdOnly": "Lock DSD volume only",

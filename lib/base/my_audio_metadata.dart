@@ -74,6 +74,25 @@ class MyAudioMetadata {
 
   Duration? get duration => _audioMetadata.duration;
 
+  bool get isDsd {
+    final fmt = format?.toLowerCase();
+    if (fmt == 'dsf' || fmt == 'dff') {
+      return true;
+    }
+    final lowerPath = (cachePath ?? path ?? '').toLowerCase();
+    return lowerPath.endsWith('.dsf') || lowerPath.endsWith('.dff');
+  }
+
+  /// DSD 倍率（64/128/256/512）；samplerate 存的是真实 DSD 速率，
+  /// 不在 44.1k 速率族时返回 null。
+  int? get dsdMultiple {
+    final rate = samplerate;
+    if (!isDsd || rate == null || rate < 2822400 || rate % 44100 != 0) {
+      return null;
+    }
+    return rate ~/ 44100;
+  }
+
   String? get lyrics => _audioMetadata.lyrics;
 
   set title(String? value) => _audioMetadata.title = value;

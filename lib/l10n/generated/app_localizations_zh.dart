@@ -825,7 +825,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dsdOutputStrategy => 'DSD 输出策略';
 
   @override
-  String get dsdToPcm => '将 DSD 转换为 PCM 输出';
+  String get dsdToPcm => '由解码器转为 PCM，走系统输出（兼容性最好）';
 
   @override
   String get dsdToPcmDesc => '以 PCM 帧封装 DSD，设备支持时使用';

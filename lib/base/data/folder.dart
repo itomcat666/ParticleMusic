@@ -32,6 +32,9 @@ final Set<String> _loftySupportedExts = {
   '.mpc',
   '.wv',
   '.spx',
+  // DSD 容器不走 lofty，由 dsd_metadata.dart 解析（见 library._parseMetadataIfNeed）
+  '.dsf',
+  '.dff',
 };
 
 class Folder {

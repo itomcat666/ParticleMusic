@@ -844,7 +844,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dsdOutputStrategy => 'DSD output strategy';
 
   @override
-  String get dsdToPcm => 'Convert DSD to PCM output';
+  String get dsdToPcm =>
+      'Decoded to PCM via the system output (most compatible)';
 
   @override
   String get dsdToPcmDesc =>

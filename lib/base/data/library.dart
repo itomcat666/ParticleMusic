@@ -9,6 +9,7 @@ import 'package:sylvakru/base/app.dart';
 import 'package:sylvakru/base/data/database.dart';
 import 'package:sylvakru/base/data/song_list_manager.dart';
 import 'package:sylvakru/base/extensions/metadata_extension.dart';
+import 'package:sylvakru/base/services/dsd_metadata.dart';
 import 'package:sylvakru/base/services/emby_client.dart';
 import 'package:sylvakru/base/services/logger.dart';
 import 'package:sylvakru/base/services/song_list_service.dart';
@@ -484,7 +485,13 @@ class Library {
       }
       AudioMetadata? tmp;
       try {
-        tmp = await readMetadataAsync(realPath, false, headers: headers);
+        final ext = extension(realPath).toLowerCase();
+        if (ext == '.dsf' || ext == '.dff') {
+          // lofty 不支持 DSD 容器，走手工头部解析（仅本地文件）
+          tmp = await readDsdMetadata(realPath);
+        } else {
+          tmp = await readMetadataAsync(realPath, false, headers: headers);
+        }
       } catch (e) {
         logger.output("$path: $e");
       }

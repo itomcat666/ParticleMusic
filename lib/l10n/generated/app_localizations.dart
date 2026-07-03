@@ -1691,7 +1691,7 @@ abstract class AppLocalizations {
   /// No description provided for @dsdToPcm.
   ///
   /// In en, this message translates to:
-  /// **'Convert DSD to PCM output'**
+  /// **'Decoded to PCM via the system output (most compatible)'**
   String get dsdToPcm;
 
   /// No description provided for @dsdToPcmDesc.
