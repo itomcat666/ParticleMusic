@@ -77,7 +77,7 @@ class _UsbExclusiveVolumeOverlayState extends State<UsbExclusiveVolumeOverlay> {
                 alignment: Alignment.centerRight,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 12),
-                  child: SizedBox(width: 78, height: height, child: _panel()),
+                  child: SizedBox(width: 84, height: height, child: _panel()),
                 ),
               ),
             ),
@@ -100,19 +100,19 @@ class _UsbExclusiveVolumeOverlayState extends State<UsbExclusiveVolumeOverlay> {
             final muted = clamped <= 0;
             final dark = theme == ThemeType.dark;
             return ClipRRect(
-              borderRadius: BorderRadius.circular(38),
+              borderRadius: BorderRadius.circular(42),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: menuColor.value.withAlpha(dark ? 160 : 190),
-                    borderRadius: BorderRadius.circular(38),
-                    border: Border.all(color: textColor.value.withAlpha(24)),
+                    color: panelColor.value.withAlpha(dark ? 205 : 235),
+                    borderRadius: BorderRadius.circular(42),
+                    border: Border.all(color: textColor.value.withAlpha(20)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withAlpha(dark ? 90 : 35),
-                        blurRadius: 26,
-                        offset: const Offset(0, 10),
+                        color: Colors.black.withAlpha(dark ? 80 : 30),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
@@ -140,15 +140,15 @@ class _UsbExclusiveVolumeOverlayState extends State<UsbExclusiveVolumeOverlay> {
                         Text(
                           '$percent%',
                           style: TextStyle(
-                            color: textColor.value,
+                            color: highlightTextColor.value,
                             fontSize: 17,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Expanded(child: _verticalSlider(accent, clamped)),
-                        const SizedBox(height: 12),
-                        _muteButton(accent, clamped, muted),
+                        const SizedBox(height: 14),
+                        Expanded(child: _fillBar(accent, clamped, dark)),
+                        const SizedBox(height: 14),
+                        _muteButton(accent, muted, dark),
                       ],
                     ),
                   ),
@@ -161,46 +161,68 @@ class _UsbExclusiveVolumeOverlayState extends State<UsbExclusiveVolumeOverlay> {
     );
   }
 
-  Widget _verticalSlider(Color accent, double value) {
-    return RotatedBox(
-      quarterTurns: 3,
-      child: SliderTheme(
-        data: SliderTheme.of(context).copyWith(
-          trackHeight: 6,
-          activeTrackColor: accent,
-          inactiveTrackColor: accent.withAlpha(38),
-          thumbColor: Colors.white,
-          overlayColor: accent.withAlpha(30),
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 9),
-        ),
-        child: Slider(
-          value: value,
-          min: 0,
-          max: 1,
-          onChanged: _applyVolume,
-          onChangeEnd: (_) => audioHandler.savePlayState(),
-        ),
-      ),
+  // iOS 风格竖向填充胶囊条：整块作为触控区，按落点/拖动位置直接换算音量并下发，
+  // 避免旋转 Slider 的手势失灵。填充色取主题 iconColor，凹槽用 textColor 淡色。
+  Widget _fillBar(Color accent, double value, bool dark) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final trackHeight = constraints.maxHeight;
+        void updateFromDy(double dy) {
+          if (trackHeight <= 0) return;
+          _applyVolume((1 - dy / trackHeight).clamp(0.0, 1.0));
+        }
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) => updateFromDy(details.localPosition.dy),
+          onVerticalDragStart: (details) =>
+              updateFromDy(details.localPosition.dy),
+          onVerticalDragUpdate: (details) =>
+              updateFromDy(details.localPosition.dy),
+          onVerticalDragEnd: (_) => audioHandler.savePlayState(),
+          onTapUp: (_) => audioHandler.savePlayState(),
+          child: Center(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 46,
+                height: trackHeight,
+                color: textColor.value.withAlpha(dark ? 34 : 22),
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: FractionallySizedBox(
+                    heightFactor: value,
+                    widthFactor: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: accent),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _muteButton(Color accent, double volume, bool muted) {
+  Widget _muteButton(Color accent, bool muted, bool dark) {
     return GestureDetector(
       onTap: () {
         _applyVolume(muted ? _lastNonZeroVolume : 0.0);
         audioHandler.savePlayState();
       },
       child: Container(
-        width: 40,
-        height: 40,
+        width: 46,
+        height: 46,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: textColor.value.withAlpha(22),
+          color: textColor.value.withAlpha(dark ? 30 : 18),
         ),
         child: Icon(
           Icons.volume_off_rounded,
           color: muted ? accent : textColor.value.withAlpha(170),
-          size: 19,
+          size: 22,
         ),
       ),
     );
