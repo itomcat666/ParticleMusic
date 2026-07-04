@@ -1268,7 +1268,7 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     if (delta == 0 || !_usbExclusiveActive) {
       return;
     }
-    const step = 0.05; // 每按一次约 5%
+    const step = 0.02; // 每按一次 2%
     final next = (volumeNotifier.value + delta * step).clamp(0.0, 1.0);
     volumeNotifier.value = next;
     setVolume(next);

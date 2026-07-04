@@ -11,6 +11,7 @@ import 'package:sylvakru/base/services/my_tray_listener.dart';
 import 'package:sylvakru/base/services/my_window_listener.dart';
 import 'package:sylvakru/base/services/single_instance.dart';
 import 'package:sylvakru/base/widgets/usb_audio_event_listener.dart';
+import 'package:sylvakru/base/widgets/usb_exclusive_volume_overlay.dart';
 import 'package:sylvakru/l10n/generated/app_localizations.dart';
 import 'package:sylvakru/l10n/generated/app_localizations_en.dart';
 import 'package:sylvakru/base/data/loader.dart';
@@ -133,6 +134,15 @@ Future<void> main() async {
               selectionHandleColor: textColor.value,
             ),
           ),
+          // 独占物理音量键触发的悬浮音量窗口叠在所有页面之上。
+          builder: (context, navigator) {
+            return Stack(
+              children: [
+                if (navigator != null) Positioned.fill(child: navigator),
+                const UsbExclusiveVolumeOverlay(),
+              ],
+            );
+          },
           home: child,
         );
       },
