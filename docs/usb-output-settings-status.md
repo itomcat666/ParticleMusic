@@ -14,8 +14,10 @@
 | USB 独占播放状态 | 已接入快照 | `UsbExclusivePlaybackState` 会由 start/pause/resume/seek/stop 等 native 调用回传，页面监听这个 notifier 展示当前快照。它不是连续实时水位。 |
 | 后台保活 | 已接入偏好 | 偏好已持久化，并用于 App 内 USB 输出策略判断；是否能完全防止系统杀后台取决于系统电池策略。 |
 | 播放后释放 USB 带宽 | 已接入偏好 | 偏好已保存，供停止播放后释放 USB 资源策略使用。 |
-| DSD 模式和 DSD 转 PCM 采样率 | 已接入偏好 | `PCM / DoP / Native` 和 DSD64/128/256/512 转 PCM 目标采样率均已持久化。底层 Native DSD/DoP 是否真正输出取决于后续独占链路实现。 |
+| DSD 模式和 DSD 转 PCM 采样率 | 部分接入 | `.dsf/.dff` 已进曲库（`dsd_metadata.dart` 手工解析头部与 DSF 尾部 ID3）。`PCM` 模式：DSD 文件不进独占，由共享路径（mpv）解码转 PCM，DSD64/128/256/512 转 PCM 目标采样率作为系统 preferred output 请求生效。`DoP` 模式：独占链路已实现（`DsdFileReader`→`DopPacketizer`→ISO 打包，时钟设为 DSD 速率÷16，需设备提供 24/32-bit alt），暂停发 DoP 封装的 0x69 静音、seek/切歌不断流。`Native` 模式：描述符声明 RAW_DATA alt（UAC2 bmFormats D31）或 quirk 指定 `nativeDsd.format` 时按字节排列（u8/u16le/u32le/u32be）直发原始 DSD（时钟 SET_CUR 为容器帧率，DSD128 u32le→176400，与 ALSA runtime rate 语义一致），判定失败自动降级 DoP 并在 state message 注明原因；会话级编码器/空窗静音填充/不 flush 策略与 DoP 一致。真机验证待做（Macaron 是否声明 RAW_DATA 以新包诊断报告/日志为准；未声明时自动回退 DoP，可通过 quirk `nativeDsd.format` 强制指定排列试验）。 |
 | 音量锁定和 DSD 增益补偿 | 已接入偏好 | 设置已持久化，供播放链路读取；硬件音量实时检测暂未接入。 |
+| DAC quirk 配置 | 已接入 | 内置 `assets/usb_dac_quirks.json` + 本地 override（设置页"导入 quirk 配置"粘贴 JSON），`vid:pid` 精确 → `vid:*` 厂商 → 默认三级匹配。当前生效字段：`dop.supported/maxDsd`（DoP 判定）、`clock.setCurDelayMs/skipGetCurValidation`（时钟配置）；`nativeDsd.format/maxDsd`（Native DSD 排列与上限判定）。诊断报告含 quirk 匹配结果、加载错误与各 alt 的 RAW_DATA 标记。 |
+| 云端来源独占策略 | 已接入（待真机验证） | Navidrome/WebDAV/Emby 未缓存曲目：后台下载缓存，约 10 秒水位且下载速度跟得上时用 `.part` 文件流式独占（引擎按增长中的文件读取，数据没跟上时 PCM 按暂停处理、DoP 垫 0x69 静音，不断流不爆音）；4 秒内达不到水位回退共享流式立即出声。独占开启时预取队列下一首云端歌曲，连播场景直接整首缓存走独占。PCM 独占的 seek/手动切歌/停止一律不 `flushOutput`（与 DoP/native 同策略）：丢在途 URB 会瞬断 ISO 流产生小音爆，改为旧缓冲放完后无缝续上新位置/新曲，代价是 seek/切歌延迟约一个水位（海贝同款行为）。流式独占（`.part` 下载未完成）读到数据末尾（seek 落在尚未下载的区段、或顺序播到当前下载末尾）时**不再误判成播放结束去跳下一首**：回到当前位置每 80ms 重探一次，等下载推进后继续（缓冲等待，可被停止/暂停/新 seek 打断）。此前 `getSize()` 返回 -1 使 `MediaExtractor` seek 到未下载时间点直接判 EOS→`readSampleData` 返回 -1→`completed`→跳歌+DAC 重锁爆音。 |
 
 ## 参考或占位项
 

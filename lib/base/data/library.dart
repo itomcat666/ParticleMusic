@@ -9,6 +9,7 @@ import 'package:sylvakru/base/app.dart';
 import 'package:sylvakru/base/data/database.dart';
 import 'package:sylvakru/base/data/song_list_manager.dart';
 import 'package:sylvakru/base/extensions/metadata_extension.dart';
+import 'package:sylvakru/base/services/dsd_metadata.dart';
 import 'package:sylvakru/base/services/emby_client.dart';
 import 'package:sylvakru/base/services/logger.dart';
 import 'package:sylvakru/base/services/song_list_service.dart';
@@ -310,22 +311,46 @@ class Library {
     cacheSizeNotifier.value += total / (1024 * 1024);
   }
 
-  Future<void> tryAddCache(MyAudioMetadata song) async {
+  // 进行中的缓存下载，按目标路径去重：同一首歌并发触发时合并成一次下载，
+  // 避免两个写入方同时写同一文件损坏缓存
+  final Map<String, Future<void>> _cacheDownloads = {};
+
+  Future<void> tryAddCache(MyAudioMetadata song) {
     if (song.sourceType == .local || song.cacheExist) {
-      return;
+      return Future.value();
     }
     final savePath = song.cachePath!;
-    if (song.sourceType == .webdav) {
-      await webdavClient!.download(remotePath: song.path!, localPath: savePath);
-    } else if (song.sourceType == .navidrome) {
-      await navidromeClient!.downloadSong(songId: song.id, savePath: savePath);
-    } else if (song.sourceType == .emby) {
-      await embyClient!.downloadSong(itemId: song.id, savePath: savePath);
+    final inFlight = _cacheDownloads[savePath];
+    if (inFlight != null) {
+      return inFlight;
     }
-    final tmp = File(savePath);
+    final download = _downloadCache(song, savePath).whenComplete(() {
+      _cacheDownloads.remove(savePath);
+    });
+    _cacheDownloads[savePath] = download;
+    return download;
+  }
+
+  Future<void> _downloadCache(MyAudioMetadata song, String savePath) async {
+    // 先下到临时文件再改名：下载中断留下的半截文件不会被当成完整缓存
+    final partPath = '$savePath.part';
+    final stale = File(partPath);
+    // 清掉上次中断的残留，避免流式独占把旧数据当成新下载的起播水位
+    if (await stale.exists()) {
+      await stale.delete();
+    }
+    if (song.sourceType == .webdav) {
+      await webdavClient!.download(remotePath: song.path!, localPath: partPath);
+    } else if (song.sourceType == .navidrome) {
+      await navidromeClient!.downloadSong(songId: song.id, savePath: partPath);
+    } else if (song.sourceType == .emby) {
+      await embyClient!.downloadSong(itemId: song.id, savePath: partPath);
+    }
+    final tmp = File(partPath);
     if (await tmp.exists()) {
+      await tmp.rename(savePath);
       song.cacheExist = true;
-      cacheSizeNotifier.value += await tmp.length() / (1024 * 1024);
+      cacheSizeNotifier.value += await File(savePath).length() / (1024 * 1024);
     }
   }
 
@@ -484,7 +509,16 @@ class Library {
       }
       AudioMetadata? tmp;
       try {
-        tmp = await readMetadataAsync(realPath, false, headers: headers);
+        final ext = extension(realPath).toLowerCase();
+        if (ext == '.dsf' || ext == '.dff') {
+          // lofty 不支持 DSD 容器，走手工头部解析；
+          // WebDAV 远程文件按 Range 只拉头部字节解析，不整首下载
+          tmp = isWebdav && realPath == path
+              ? await readRemoteDsdMetadata(path, headers: headers)
+              : await readDsdMetadata(realPath);
+        } else {
+          tmp = await readMetadataAsync(realPath, false, headers: headers);
+        }
       } catch (e) {
         logger.output("$path: $e");
       }

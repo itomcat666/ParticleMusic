@@ -1520,6 +1520,30 @@ abstract class AppLocalizations {
   /// **'Volume control'**
   String get volumeControl;
 
+  /// No description provided for @volumeControlDac.
+  ///
+  /// In en, this message translates to:
+  /// **'DAC hardware volume'**
+  String get volumeControlDac;
+
+  /// No description provided for @volumeControlDigital.
+  ///
+  /// In en, this message translates to:
+  /// **'Digital volume'**
+  String get volumeControlDigital;
+
+  /// No description provided for @volumeControlRaw.
+  ///
+  /// In en, this message translates to:
+  /// **'Raw digital level'**
+  String get volumeControlRaw;
+
+  /// No description provided for @volumeControlDacFallbackHint.
+  ///
+  /// In en, this message translates to:
+  /// **'DAC hardware volume isn\'t available yet; it currently falls back to digital volume.'**
+  String get volumeControlDacFallbackHint;
+
   /// No description provided for @dsdGainCompensation.
   ///
   /// In en, this message translates to:
@@ -1616,6 +1640,36 @@ abstract class AppLocalizations {
   /// **'Bundle device descriptors, parse results and recent logs to copy or export for the developer to debug DAC compatibility.'**
   String get generateDiagnosticsReportDesc;
 
+  /// No description provided for @importQuirkConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Import quirk config'**
+  String get importQuirkConfig;
+
+  /// No description provided for @importQuirkConfigDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Paste the device quirk JSON from the developer; reconnect the device to apply'**
+  String get importQuirkConfigDesc;
+
+  /// No description provided for @importAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Import'**
+  String get importAction;
+
+  /// No description provided for @importQuirkSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Quirk config imported; reconnect the device to apply'**
+  String get importQuirkSuccess;
+
+  /// No description provided for @importQuirkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Import failed'**
+  String get importQuirkFailed;
+
   /// No description provided for @generating.
   ///
   /// In en, this message translates to:
@@ -1691,7 +1745,7 @@ abstract class AppLocalizations {
   /// No description provided for @dsdToPcm.
   ///
   /// In en, this message translates to:
-  /// **'Convert DSD to PCM output'**
+  /// **'Decoded to PCM via the system output (most compatible)'**
   String get dsdToPcm;
 
   /// No description provided for @dsdToPcmDesc.
@@ -1703,20 +1757,8 @@ abstract class AppLocalizations {
   /// No description provided for @dsdNativeDesc.
   ///
   /// In en, this message translates to:
-  /// **'Keep the native DSD path; requires low-level support'**
+  /// **'Sends raw DSD when the device declares RAW_DATA or a quirk sets the layout; falls back to DoP otherwise'**
   String get dsdNativeDesc;
-
-  /// No description provided for @volumeLockDsdOnly.
-  ///
-  /// In en, this message translates to:
-  /// **'Lock DSD volume only'**
-  String get volumeLockDsdOnly;
-
-  /// No description provided for @volumeLockAlways.
-  ///
-  /// In en, this message translates to:
-  /// **'Always lock'**
-  String get volumeLockAlways;
 
   /// No description provided for @sourceFile.
   ///
@@ -1945,6 +1987,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not enabled'**
   String get notEnabled;
+
+  /// No description provided for @bitPerfectDirect.
+  ///
+  /// In en, this message translates to:
+  /// **'Bit-perfect (direct)'**
+  String get bitPerfectDirect;
+
+  /// No description provided for @bitPerfectVolume.
+  ///
+  /// In en, this message translates to:
+  /// **'Digital volume'**
+  String get bitPerfectVolume;
 
   /// No description provided for @noUsbDacInfo.
   ///

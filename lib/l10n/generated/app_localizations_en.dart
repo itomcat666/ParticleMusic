@@ -751,6 +751,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get volumeControl => 'Volume control';
 
   @override
+  String get volumeControlDac => 'DAC hardware volume';
+
+  @override
+  String get volumeControlDigital => 'Digital volume';
+
+  @override
+  String get volumeControlRaw => 'Raw digital level';
+
+  @override
+  String get volumeControlDacFallbackHint =>
+      'DAC hardware volume isn\'t available yet; it currently falls back to digital volume.';
+
+  @override
   String get dsdGainCompensation => 'DSD gain compensation';
 
   @override
@@ -803,6 +816,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'Bundle device descriptors, parse results and recent logs to copy or export for the developer to debug DAC compatibility.';
 
   @override
+  String get importQuirkConfig => 'Import quirk config';
+
+  @override
+  String get importQuirkConfigDesc =>
+      'Paste the device quirk JSON from the developer; reconnect the device to apply';
+
+  @override
+  String get importAction => 'Import';
+
+  @override
+  String get importQuirkSuccess =>
+      'Quirk config imported; reconnect the device to apply';
+
+  @override
+  String get importQuirkFailed => 'Import failed';
+
+  @override
   String get generating => 'Generating…';
 
   @override
@@ -844,7 +874,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dsdOutputStrategy => 'DSD output strategy';
 
   @override
-  String get dsdToPcm => 'Convert DSD to PCM output';
+  String get dsdToPcm =>
+      'Decoded to PCM via the system output (most compatible)';
 
   @override
   String get dsdToPcmDesc =>
@@ -852,13 +883,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dsdNativeDesc =>
-      'Keep the native DSD path; requires low-level support';
-
-  @override
-  String get volumeLockDsdOnly => 'Lock DSD volume only';
-
-  @override
-  String get volumeLockAlways => 'Always lock';
+      'Sends raw DSD when the device declares RAW_DATA or a quirk sets the layout; falls back to DoP otherwise';
 
   @override
   String get sourceFile => 'Source';
@@ -983,6 +1008,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get notEnabled => 'Not enabled';
+
+  @override
+  String get bitPerfectDirect => 'Bit-perfect (direct)';
+
+  @override
+  String get bitPerfectVolume => 'Digital volume';
 
   @override
   String get noUsbDacInfo =>

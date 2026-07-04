@@ -272,8 +272,10 @@ void main() {
         'sourceFormat': 'flac',
         'sampleRate': 44100,
         'bitDepth': 24,
+        'dsdMode': null,
         'targetBufferMs': 320,
         'startPaused': false,
+        'streaming': false,
       });
       expect(state.active, isTrue);
       expect(state.playing, isTrue);

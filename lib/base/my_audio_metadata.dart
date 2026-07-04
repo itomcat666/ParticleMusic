@@ -74,6 +74,25 @@ class MyAudioMetadata {
 
   Duration? get duration => _audioMetadata.duration;
 
+  bool get isDsd {
+    final fmt = format?.toLowerCase();
+    if (fmt == 'dsf' || fmt == 'dff') {
+      return true;
+    }
+    final lowerPath = (cachePath ?? path ?? '').toLowerCase();
+    return lowerPath.endsWith('.dsf') || lowerPath.endsWith('.dff');
+  }
+
+  /// DSD 倍率（64/128/256/512）；samplerate 存的是真实 DSD 速率，
+  /// 不在 44.1k 速率族时返回 null。
+  int? get dsdMultiple {
+    final rate = samplerate;
+    if (!isDsd || rate == null || rate < 2822400 || rate % 44100 != 0) {
+      return null;
+    }
+    return rate ~/ 44100;
+  }
+
   String? get lyrics => _audioMetadata.lyrics;
 
   set title(String? value) => _audioMetadata.title = value;
@@ -94,7 +113,11 @@ class MyAudioMetadata {
   factory MyAudioMetadata.fromNavidromeMap(Map<String, dynamic> song) {
     return MyAudioMetadata(
       AudioMetadata(
-        format: (song['contentType'] as String?)?.split('audio/').last,
+        // suffix 是真实文件扩展名（flac/dsf/…）；contentType 对 DSD 是
+        // audio/x-dsf 之类的变体，直接截取会得到 x-dsf 导致识别不到 DSD
+        format:
+            (song['suffix'] as String?) ??
+            (song['contentType'] as String?)?.split('audio/').last,
         title: song['title'],
         artist: song['artist'],
         album: song['album'],
@@ -133,9 +156,13 @@ class MyAudioMetadata {
       orElse: () => null,
     );
 
+    final container = primarySource?['Container'] as String?;
     return MyAudioMetadata(
       AudioMetadata(
-        format: audioStream?['Codec'] ?? primarySource?['Container'],
+        // DSD 的 Codec 是 dsd_lsbf_planar 之类的解码器名，用容器名才能识别 DSD
+        format: (container == 'dsf' || container == 'dff')
+            ? container
+            : audioStream?['Codec'] ?? container,
 
         title: song['Name'],
 

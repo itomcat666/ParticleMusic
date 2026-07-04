@@ -8,12 +8,18 @@ import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
 import android.hardware.usb.UsbManager
 import android.media.MediaCodec
+import android.media.MediaCodecList
+import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -47,6 +53,8 @@ object UsbExclusiveNative {
 
     external fun setMaxPendingOutputUrbs(maxPendingUrbs: Int)
 
+    external fun flushOutput(): String?
+
     external fun close()
 }
 
@@ -55,6 +63,9 @@ private const val NATIVE_USB_EXCLUSIVE_DISABLED_MESSAGE =
     "真独占 USB 流式输出暂未启用，已回退到系统 USB 输出。"
 private const val USB_RECIP_INTERFACE = 0x01
 private const val USB_RECIP_ENDPOINT = 0x02
+
+// 数字音量线性增益的 Q16.16 定点满刻度（1.0），低于此值即衰减，等于此值为位完美直通。
+private const val UNITY_GAIN_Q16 = 65536
 
 class UsbExclusiveAudioEngine(
     private val context: Context,
@@ -75,6 +86,35 @@ class UsbExclusiveAudioEngine(
     private var lastTelemetryBufferMs: Long? = null
     private var zeroBufferUnderruns = 0L
     private var activePacketsPerSecond = 0
+
+    // 热切换：切歌时设备与端点参数（时钟/声道/位深）不变就保留已打开的 USB
+    // 会话，不重新 claim 接口/设 altsetting/配时钟，DAC 不会重新锁定（重新锁定
+    // 就是切歌"咔嗒/电流"声的来源）。会话在停播后延迟关闭，短时间内没有新的
+    // start 才真正拆链路。
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val deferredCloseRunnable = Runnable { hardCloseSession("idle timeout") }
+    private var sessionDeviceId: Int? = null
+    private var sessionSampleRate: Int? = null
+    private var sessionChannels: Int? = null
+    private var sessionBitDepth: Int? = null
+    private var sessionTarget: OutputTarget? = null
+    @Volatile private var sessionBroken = false
+
+    // DSD 编码相位/帧对齐跨曲目/跨空窗延续：编码器（DoP 或 native）与打包器提升到
+    // 会话级，写线程与空窗静音线程（互斥，先 join 再启动）共用。DAC 看到的 DSD 流
+    // 一旦中断就会掉回 PCM 模式再重新锁定（指示灯蓝→绿→蓝），伴随继电器咔嗒声。
+    @Volatile private var sessionDsd: DsdStreamEncoder? = null
+    @Volatile private var sessionPacketizer: PcmIsoPacketizer? = null
+    // 会话输出类别："dop" / "native" / null=PCM，热复用必须同类同排列
+    private var sessionDsdKind: String? = null
+    private var sessionNativeFormat: String? = null
+    @Volatile private var workerEndedAtEof = false
+    private val idleFillerRunning = AtomicBoolean(false)
+    private var idleFillerThread: Thread? = null
+    // 数字音量：PCM 打包器逐样本读取此增益（Q16.16）。enabled=false（原始数字电平）时
+    // 恒为满刻度直通；DSD/DoP 打包器不读此值，始终位完美。
+    @Volatile private var pcmVolumeGainQ16 = UNITY_GAIN_Q16
+    @Volatile private var volumeControlEnabled = false
 
     fun capabilities(usbManager: UsbManager, device: UsbDevice?): Map<String, Any?> {
         if (!NATIVE_USB_EXCLUSIVE_STREAMING_ENABLED) {
@@ -116,7 +156,12 @@ class UsbExclusiveAudioEngine(
         device: UsbDevice?,
         arguments: Map<String, Any?>,
     ): Map<String, Any?> {
-        stop()
+        // 停掉上一首的写线程但先不拆 USB 会话，后面参数匹配时热复用
+        val sessionUsable = stopWorkerKeepingSession()
+        if (connection != null) {
+            // 下面任一校验失败提前返回时，兜底延迟关闭残留会话
+            scheduleDeferredClose()
+        }
 
         if (!NATIVE_USB_EXCLUSIVE_STREAMING_ENABLED) {
             return updateState(inactiveState(NATIVE_USB_EXCLUSIVE_DISABLED_MESSAGE))
@@ -148,87 +193,327 @@ class UsbExclusiveAudioEngine(
         )
 
         if (!isSupportedFile(filePath, sourceFormat)) {
-            return updateState(inactiveState("Exclusive playback currently supports FLAC and WAV only."))
+            return updateState(inactiveState("This audio format cannot be decoded for USB exclusive playback."))
         }
 
-        val requestedSampleRate = (arguments["sampleRate"] as? Number)?.toInt()
-        val requestedBitDepth = (arguments["bitDepth"] as? Number)?.toInt()
+        // 流式独占：file 是仍在下载增长的 .part 文件，下载完成时会被改名为正式
+        // 缓存名（已打开的 fd 不受影响）。数据没跟上时按"暂停"处理，绝不断流爆音。
+        val streaming = arguments["streaming"] == true
+        // 流式独占的完整文件大小估算：让 GrowingFileDataSource.getSize() 返回它，
+        // MediaExtractor 才能对增长中的 .part 正确 seek（0 表示未知，退回旧的 -1）
+        val streamTotalBytes = (arguments["totalBytes"] as? Number)?.toLong() ?: 0L
+
+        // 该设备的 quirk 生效值（vid:pid 精确 → vid:* 厂商 → 默认）
+        val quirk = UsbDacQuirks.forDevice(context, device.vendorId, device.productId)
+
+        // DSD 输出模式：dop / native；pcm 模式在 Dart 侧直接走共享路径，不会到这里
+        val dsdMode = (arguments["dsdMode"] as? String)?.lowercase(Locale.ROOT)
+        var dsdReader: DsdFileReader? = null
+        // native 的字节排列：quirk 指定或沿用同设备会话；都没有就等描述符解析出 RAW_DATA alt
+        var nativeDsd = false
+        var nativeFormat: String? = null
+        var nativeFallbackReason: String? = null
+
+        // native 判定失败回退 DoP 前的门槛（DoP 自身的 quirk 限制照常适用）；
+        // 返回非 null 表示连 DoP 也不可用，只能整体回退
+        fun dopGateError(multiple: Int?): String? {
+            if (quirk.dopSupported == false) {
+                return "Device is marked as not supporting DoP (quirk" +
+                    "${quirk.label?.let { ": $it" } ?: ""})."
+            }
+            if (quirk.dopMaxDsd != null && multiple != null && multiple > quirk.dopMaxDsd) {
+                return "DSD$multiple exceeds this device's DoP limit (DSD${quirk.dopMaxDsd}, quirk)."
+            }
+            return null
+        }
+
+        if (isDsdFile(filePath, sourceFormat)) {
+            if (dsdMode != "dop" && dsdMode != "native") {
+                return updateState(
+                    inactiveState(
+                        "DSD over USB exclusive requires DoP or native mode (current: ${dsdMode ?: "unset"}).",
+                    ),
+                )
+            }
+            dsdReader = try {
+                DsdFileReader.open(file, streaming)
+            } catch (error: IOException) {
+                return updateState(inactiveState(error.message ?: "Failed to parse DSD file."))
+            }
+            val multiple = dsdReader.dsdMultiple
+            if (dsdMode == "native") {
+                nativeFormat = quirk.nativeDsdFormat
+                    ?: sessionNativeFormat.takeIf { sessionDeviceId == device.deviceId }
+                if (quirk.nativeDsdMaxDsd != null && multiple != null && multiple > quirk.nativeDsdMaxDsd) {
+                    nativeFallbackReason =
+                        "DSD$multiple exceeds native DSD limit DSD${quirk.nativeDsdMaxDsd} (quirk)"
+                } else {
+                    nativeDsd = true
+                }
+            }
+            if (!nativeDsd) {
+                // DoP 模式，或 native 上限超标回退 DoP
+                dopGateError(multiple)?.let { gateError ->
+                    dsdReader.close()
+                    return updateState(inactiveState(gateError))
+                }
+                nativeFallbackReason?.let {
+                    UsbDiagnostics.w(tag, "native DSD unavailable, falling back to DoP: $it")
+                }
+            }
+            UsbDiagnostics.i(
+                tag,
+                "DSD source rate=${dsdReader.sampleRate} (DSD${dsdReader.dsdMultiple ?: "?"}), " +
+                    "channels=${dsdReader.channels}, container=${dsdReader.formatName}, " +
+                    "mode=${if (nativeDsd) "native(${nativeFormat ?: "by-descriptor"})" else "dop"}, " +
+                    "quirk dop=${quirk.dopSupported}, nativeDsd=${quirk.nativeDsdFormat}",
+            )
+        }
+
+        // 输出帧率：DoP = DSD速率÷16（24-bit 帧）；native = DSD速率÷8÷每采样字节数
+        //（字节排列未定时置 null：禁用热复用，等描述符解析后再定）；PCM 由 Dart 下发
+        var requestedSampleRate = when {
+            dsdReader == null -> (arguments["sampleRate"] as? Number)?.toInt()
+            nativeDsd -> nativeDsdBytesPerSample(nativeFormat)?.let { dsdReader.sampleRate / 8 / it }
+            else -> dsdReader.dopFrameRate
+        }
+        var requestedBitDepth = when {
+            dsdReader == null -> (arguments["bitDepth"] as? Number)?.toInt()
+            nativeDsd -> nativeDsdBytesPerSample(nativeFormat)?.let { it * 8 }
+            else -> null
+        }
         targetBufferMs = ((arguments["targetBufferMs"] as? Number)?.toInt() ?: 200).coerceIn(50, 5000)
+        if (streaming) {
+            // 流式播放用更深的 USB 水位吸收下载抖动
+            targetBufferMs = maxOf(targetBufferMs, 1000)
+        }
         minimumBufferLevelMs = null
         lastTelemetryEmitMs = 0L
         lastTelemetryBufferMs = null
         zeroBufferUnderruns = 0L
         activePacketsPerSecond = 0
-        val requestedChannels = 2
-        val openedConnection = usbManager.openDevice(device)
-            ?: return updateState(inactiveState("Failed to open USB device for exclusive playback."))
-        val descriptors = openedConnection.rawDescriptors
-        val streamingFormats = parseStreamingFormatInfo(descriptors)
-        val target = findOutputTarget(
-            device,
-            streamingFormats = streamingFormats,
-            sampleRate = requestedSampleRate,
-            channels = requestedChannels,
-            bitDepth = requestedBitDepth,
-        )
-            ?: run {
+        val requestedChannels = dsdReader?.channels ?: 2
+        val wantDsdKind = when {
+            dsdReader == null -> null
+            nativeDsd -> "native"
+            else -> "dop"
+        }
+        // 设备与端点参数都没变时热复用已打开的会话；输出类别（PCM/DoP/native
+        // 及 native 字节排列）必须一致，DoP 复用还要确认既有 slot ≥ 24-bit
+        val reuseSession = sessionUsable &&
+            connection != null &&
+            sessionTarget != null &&
+            sessionDeviceId == device.deviceId &&
+            sessionSampleRate == requestedSampleRate &&
+            sessionChannels == requestedChannels &&
+            sessionBitDepth == requestedBitDepth &&
+            sessionDsdKind == wantDsdKind &&
+            (wantDsdKind != "native" || sessionNativeFormat == nativeFormat) &&
+            (dsdReader == null || nativeDsd || sessionTarget!!.usbBytesPerSample >= 3)
+        val target: OutputTarget
+        if (reuseSession) {
+            target = sessionTarget!!
+            mainHandler.removeCallbacks(deferredCloseRunnable)
+            stopDopIdleFiller()
+            // 热复用切歌一律不 flush：丢在途 URB 会瞬断 ISO 流——DSD 会让 DAC 掉出
+            // DSD 模式重锁（咔嗒），PCM 会瞬间欠载出小音爆。旧缓冲（约一个水位）
+            // 放完无缝续上新曲，与自然播完切歌（workerEndedAtEof）行为一致。
+            UsbDiagnostics.i(
+                tag,
+                "reusing exclusive USB session sampleRate=$requestedSampleRate, " +
+                    "channels=$requestedChannels, bitDepth=${requestedBitDepth ?: "auto"}",
+            )
+        } else {
+            hardCloseSession("device or stream parameters changed")
+            val openedConnection = usbManager.openDevice(device)
+                ?: run {
+                    dsdReader?.close()
+                    return updateState(inactiveState("Failed to open USB device for exclusive playback."))
+                }
+            val descriptors = openedConnection.rawDescriptors
+            val streamingFormats = parseStreamingFormatInfo(descriptors)
+
+            val enteredNative = nativeDsd
+            if (nativeDsd && nativeFormat == null) {
+                // 无 quirk 时按描述符声明的 RAW_DATA alt 推断字节排列（subslot 宽度，默认小端）
+                val rawSlot = streamingFormats.values
+                    .filter { it.isRawData }
+                    .mapNotNull { info -> info.subslotSize?.takeIf { it == 1 || it == 2 || it == 4 } }
+                    .maxOrNull()
+                if (rawSlot != null) {
+                    nativeFormat = if (rawSlot == 1) "u8" else "u${rawSlot * 8}le"
+                    UsbDiagnostics.i(
+                        tag,
+                        "native DSD alt declared by descriptor, subslot=$rawSlot -> $nativeFormat",
+                    )
+                } else {
+                    nativeDsd = false
+                    nativeFallbackReason = "device declares no RAW_DATA alt and no nativeDsd quirk"
+                }
+            }
+
+            var resolvedTarget: OutputTarget? = null
+            if (nativeDsd) {
+                val nativeBps = nativeDsdBytesPerSample(nativeFormat)!!
+                requestedSampleRate = dsdReader!!.sampleRate / 8 / nativeBps
+                requestedBitDepth = nativeBps * 8
+                resolvedTarget = findOutputTarget(
+                    device,
+                    streamingFormats = streamingFormats,
+                    sampleRate = requestedSampleRate,
+                    channels = requestedChannels,
+                    bitDepth = requestedBitDepth,
+                    requireRawData = streamingFormats.values.any { it.isRawData },
+                )
+                // 选中的 alt 必须与字节排列同宽：native 数据不允许任何位深转换（会破坏 DSD 流）
+                if (resolvedTarget == null ||
+                    resolvedTarget.usbBytesPerSample != nativeBps ||
+                    (resolvedTarget.usbBitResolution != null &&
+                        resolvedTarget.usbBitResolution != nativeBps * 8)
+                ) {
+                    nativeDsd = false
+                    nativeFallbackReason =
+                        "no fitting alt for native DSD $nativeFormat at ${requestedSampleRate}Hz"
+                    resolvedTarget = null
+                }
+            }
+            if (enteredNative && !nativeDsd) {
+                // native 在描述符/alt 层面落空，降级 DoP（此时才需要补查 DoP 的 quirk 门槛）
+                UsbDiagnostics.w(tag, "native DSD unavailable, falling back to DoP: $nativeFallbackReason")
+                dopGateError(dsdReader!!.dsdMultiple)?.let { gateError ->
+                    openedConnection.close()
+                    dsdReader!!.close()
+                    return updateState(
+                        inactiveState("Native DSD unavailable ($nativeFallbackReason); $gateError"),
+                    )
+                }
+                requestedSampleRate = dsdReader!!.dopFrameRate
+                requestedBitDepth = null
+            }
+            if (resolvedTarget == null) {
+                resolvedTarget = findOutputTarget(
+                    device,
+                    streamingFormats = streamingFormats,
+                    sampleRate = requestedSampleRate,
+                    channels = requestedChannels,
+                    bitDepth = requestedBitDepth,
+                )
+            }
+            if (resolvedTarget == null) {
                 openedConnection.close()
+                dsdReader?.close()
                 return updateState(inactiveState("No isochronous USB Audio OUT endpoint was found."))
             }
-        UsbDiagnostics.i(
-            tag,
-            "exclusive target interface=${target.usbInterface.id}, alt=${target.alternateSetting}, " +
-                "endpoint=0x${target.endpoint.address.toString(16)}, maxPacket=${target.endpoint.maxPacketSize}, " +
-                "feedback=${target.feedbackEndpointLabel}, " +
-                "requestedSampleRate=$requestedSampleRate, requestedBitDepth=${requestedBitDepth ?: "auto"}, " +
-                "usbFormat=${target.formatInfo}",
-        )
-
-        val openError = UsbExclusiveNative.open(
-            openedConnection.fileDescriptor,
-            target.usbInterface.id,
-            target.alternateSetting,
-            target.endpoint.address,
-            target.endpoint.maxPacketSize,
-            target.feedbackEndpoint?.address ?: 0,
-            target.feedbackEndpoint?.maxPacketSize ?: 0,
-            false,
-        )
-        if (openError != null) {
-            openedConnection.close()
-            return updateState(inactiveState(openError))
-        }
-        UsbDiagnostics.i(tag, "native USB exclusive endpoint opened.")
-
-        if (requestedSampleRate != null) {
-            val clockError = configureUsbAudioClock(openedConnection, device, target, requestedSampleRate)
-            if (clockError != null) {
-                UsbExclusiveNative.close()
+            if (dsdReader != null && !nativeDsd && resolvedTarget.usbBytesPerSample < 3) {
+                // 16-bit slot 无法承载 DoP 的 8 位标记 + 16 位数据
                 openedConnection.close()
-                return updateState(inactiveState(clockError))
+                dsdReader.close()
+                return updateState(
+                    inactiveState(
+                        "DoP requires a 24/32-bit output slot, but the device only exposes " +
+                            "${resolvedTarget.usbBitResolution ?: resolvedTarget.usbBytesPerSample * 8}-bit at " +
+                            "${requestedSampleRate}Hz.",
+                    ),
+                )
             }
-        }
+            UsbDiagnostics.i(
+                tag,
+                "exclusive target interface=${resolvedTarget.usbInterface.id}, alt=${resolvedTarget.alternateSetting}, " +
+                    "endpoint=0x${resolvedTarget.endpoint.address.toString(16)}, maxPacket=${resolvedTarget.endpoint.maxPacketSize}, " +
+                    "feedback=${resolvedTarget.feedbackEndpointLabel}, " +
+                    "requestedSampleRate=$requestedSampleRate, requestedBitDepth=${requestedBitDepth ?: "auto"}, " +
+                    "usbFormat=${resolvedTarget.formatInfo}",
+            )
 
-        connection = openedConnection
+            val openError = UsbExclusiveNative.open(
+                openedConnection.fileDescriptor,
+                resolvedTarget.usbInterface.id,
+                resolvedTarget.alternateSetting,
+                resolvedTarget.endpoint.address,
+                resolvedTarget.endpoint.maxPacketSize,
+                resolvedTarget.feedbackEndpoint?.address ?: 0,
+                resolvedTarget.feedbackEndpoint?.maxPacketSize ?: 0,
+                false,
+            )
+            if (openError != null) {
+                openedConnection.close()
+                dsdReader?.close()
+                return updateState(inactiveState(openError))
+            }
+            UsbDiagnostics.i(tag, "native USB exclusive endpoint opened.")
+
+            // 时钟：native DSD 与 DoP/PCM 一样按容器帧率 SET_CUR（与 ALSA runtime rate
+            // 语义一致，DSD128 u32le → 176400）。真机教训：设成字节率（速率÷8）会被
+            // Macaron 无视，DAC 停在别的时钟上按错误节奏消耗数据，输出持续电流声
+            if (requestedSampleRate != null) {
+                val clockError = configureUsbAudioClock(
+                    openedConnection,
+                    device,
+                    resolvedTarget,
+                    requestedSampleRate,
+                    quirk,
+                )
+                if (clockError != null) {
+                    UsbExclusiveNative.close()
+                    openedConnection.close()
+                    dsdReader?.close()
+                    return updateState(inactiveState(clockError))
+                }
+            }
+
+            connection = openedConnection
+            sessionDeviceId = device.deviceId
+            sessionSampleRate = requestedSampleRate
+            sessionChannels = requestedChannels
+            sessionBitDepth = requestedBitDepth
+            sessionTarget = resolvedTarget
+            sessionDsdKind = when {
+                dsdReader == null -> null
+                nativeDsd -> "native"
+                else -> "dop"
+            }
+            sessionNativeFormat = if (nativeDsd) nativeFormat else null
+            target = resolvedTarget
+        }
+        sessionBroken = false
+        workerEndedAtEof = false
         paused.set(arguments["startPaused"] == true)
         stopped.set(false)
         pendingSeekMs.set(-1L)
 
+        // DSD 激活时 state 报 DSD 语义：sampleRate=DSD 速率、bitDepth=1、
+        // format 带 (DoP)/(Native) 后缀；native 判定失败回退 DoP 时把原因写进 message
+        val reader = dsdReader
+        val dsdSuffix = if (nativeDsd) "Native" else "DoP"
         val initialState = mapOf(
             "active" to true,
             "playing" to !paused.get(),
             "positionMs" to 0,
-            "durationMs" to null,
-            "sampleRate" to arguments["sampleRate"],
-            "bitDepth" to arguments["bitDepth"],
-            "format" to (sourceFormat ?: file.extension.lowercase(Locale.ROOT)),
-            "message" to "USB exclusive playback prepared.",
+            "durationMs" to reader?.durationMs,
+            "sampleRate" to (reader?.sampleRate ?: arguments["sampleRate"]),
+            "bitDepth" to if (reader != null) 1 else arguments["bitDepth"],
+            "format" to if (reader != null) {
+                "${reader.formatName}($dsdSuffix)"
+            } else {
+                sourceFormat ?: file.extension.lowercase(Locale.ROOT)
+            },
+            "message" to if (reader != null && nativeFallbackReason != null) {
+                "USB exclusive playback prepared (native DSD unavailable: " +
+                    "$nativeFallbackReason; using DoP)."
+            } else {
+                "USB exclusive playback prepared."
+            },
         )
         updateState(initialState)
         emitTransportTelemetry(target.packetsPerSecond, force = true)
 
+        val workerNativeFormat = if (nativeDsd) nativeFormat else null
         worker = Thread({
-            decodeAndWrite(file, target)
+            if (reader != null) {
+                dsdDecodeAndWrite(reader, target, if (streaming) file else null, workerNativeFormat)
+            } else {
+                decodeAndWrite(file, target, streaming, streamTotalBytes)
+            }
         }, "SylvakruUsbExclusive")
         worker?.start()
         return currentState
@@ -268,6 +553,21 @@ class UsbExclusiveAudioEngine(
         )
     }
 
+    // 设置独占数字音量。enabled=false（原始数字电平）时旁路为满刻度直通；否则按传入
+    // 的 Q16.16 线性增益衰减 PCM。DSD/DoP 会话不受影响。切歌不复位，音量在会话内保持。
+    fun setVolume(gainQ16: Int, enabled: Boolean) {
+        volumeControlEnabled = enabled
+        pcmVolumeGainQ16 = if (enabled) gainQ16.coerceIn(0, UNITY_GAIN_Q16) else UNITY_GAIN_Q16
+        UsbDiagnostics.i(tag, "set exclusive volume gainQ16=$pcmVolumeGainQ16, enabled=$enabled")
+    }
+
+    // 是否应由本软件接管安卓物理音量键：独占播放中、非原始数字电平模式，且非 DSD。
+    // DSD（DoP/原生，bitDepth=1）是位流无法软件调音量，交回系统避免弹出无效音量条。
+    fun isVolumeControlEngaged(): Boolean =
+        currentState["active"] == true &&
+            volumeControlEnabled &&
+            currentState["bitDepth"] != 1
+
     fun setTargetBufferMs(value: Int): Map<String, Any?> {
         targetBufferMs = value.coerceIn(50, 5000)
         applyNativeTargetBuffer(activePacketsPerSecond)
@@ -278,22 +578,108 @@ class UsbExclusiveAudioEngine(
     }
 
     fun stop(): Map<String, Any?> {
+        val keepSession = stopWorkerKeepingSession()
+        if (keepSession && connection != null) {
+            // 停止/切歌一律不 flush：丢在途 URB 会瞬断 ISO 流（DSD 掉锁、PCM 小音爆）。
+            // 旧缓冲（约一个水位）放完，DSD 交给静音填充线程接续、PCM 自然收尾，
+            // 由延迟关闭兜底。切歌场景旧尾放完后由下一首 start 无缝续上。
+            // 空窗期持续垫 DoP/native 静音直到下一首接管或延迟关闭（自然播完时
+            // 写线程退出前已启动，重复调用无副作用；PCM 无编码器时为空操作）
+            startDopIdleFiller()
+            scheduleDeferredClose()
+        }
+        return updateState(inactiveState("USB exclusive playback stopped."))
+    }
+
+    fun release(): Map<String, Any?> {
+        stopWorkerKeepingSession()
+        hardCloseSession("release")
+        return updateState(inactiveState("USB exclusive playback stopped."))
+    }
+
+    // 停写线程；返回 true 表示线程干净退出、USB 会话仍可热复用
+    private fun stopWorkerKeepingSession(): Boolean {
         stopped.set(true)
         paused.set(false)
         pendingSeekMs.set(-1L)
         val thread = worker
         worker = null
-        if (thread != null && thread != Thread.currentThread()) {
+        if (thread == null || thread == Thread.currentThread()) {
+            return !sessionBroken && connection != null
+        }
+        thread.join(800)
+        if (thread.isAlive) {
+            // 收不回来（多半阻塞在 native 写的水位回收上），只能硬关让写立即返回
+            UsbDiagnostics.w(tag, "exclusive worker join timeout, forcing session close")
+            hardCloseSession("worker join timeout")
+            thread.join(500)
+            return false
+        }
+        return !sessionBroken && connection != null
+    }
+
+    private fun scheduleDeferredClose() {
+        mainHandler.removeCallbacks(deferredCloseRunnable)
+        mainHandler.postDelayed(deferredCloseRunnable, 4000L)
+    }
+
+    // 空窗期（切歌/停止后）持续垫 DSD 静音（0x69）：与写线程互斥（先 join 再启动），
+    // DoP 标记相位/native 帧对齐由 sessionDsd 延续，DAC 始终收到合法 DSD 流不掉锁
+    private fun startDopIdleFiller() {
+        val encoder = sessionDsd ?: return
+        val packetizer = sessionPacketizer ?: return
+        val frameRate = sessionSampleRate ?: return
+        if (idleFillerThread?.isAlive == true) {
+            return
+        }
+        idleFillerRunning.set(true)
+        UsbDiagnostics.i(tag, "DSD idle filler started at $frameRate frames/s")
+        val thread = Thread({
+            // 单次约 10ms 的量，写满水位由 native 阻塞回收自然限速
+            val frames = maxOf(1, frameRate / 100)
+            try {
+                while (idleFillerRunning.get()) {
+                    packetizer.write(encoder.encodeSilence(frames))
+                }
+            } catch (error: Throwable) {
+                // 会话已断（拔线/被关），交给延迟关闭兜底
+                UsbDiagnostics.w(tag, "DSD idle filler exit: ${error.message}")
+            }
+        }, "SylvakruUsbDopIdleFill")
+        idleFillerThread = thread
+        thread.start()
+    }
+
+    private fun stopDopIdleFiller() {
+        idleFillerRunning.set(false)
+        val thread = idleFillerThread ?: return
+        idleFillerThread = null
+        if (thread != Thread.currentThread()) {
             thread.join(500)
         }
+    }
+
+    private fun hardCloseSession(reason: String) {
+        if (connection == null && sessionTarget == null) {
+            return
+        }
+        UsbDiagnostics.i(tag, "close exclusive USB session: $reason")
+        mainHandler.removeCallbacks(deferredCloseRunnable)
+        stopDopIdleFiller()
+        sessionDsd = null
+        sessionPacketizer = null
+        sessionDsdKind = null
+        sessionNativeFormat = null
+        sessionTarget = null
+        sessionDeviceId = null
+        sessionSampleRate = null
+        sessionChannels = null
+        sessionBitDepth = null
         UsbExclusiveNative.close()
         connection?.close()
         connection = null
         activePacketsPerSecond = 0
-        return updateState(inactiveState("USB exclusive playback stopped."))
     }
-
-    fun release(): Map<String, Any?> = stop()
 
     private fun emitTransportTelemetry(packetsPerSecond: Int, force: Boolean = false) {
         val nowMs = SystemClock.elapsedRealtime()
@@ -367,18 +753,32 @@ class UsbExclusiveAudioEngine(
         )
     }
 
-    private fun decodeAndWrite(file: File, target: OutputTarget) {
+    private fun decodeAndWrite(
+        file: File,
+        target: OutputTarget,
+        streaming: Boolean = false,
+        totalBytes: Long = 0L,
+    ) {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        var dataSource: GrowingFileDataSource? = null
         var sawInputEos = false
         var outputDone = false
         val info = MediaCodec.BufferInfo()
         val startMs = SystemClock.elapsedRealtime()
         var lastPositionEmitMs = 0L
         var packetizer: PcmIsoPacketizer? = null
+        // 流式独占当前应播位置（ms）与缓冲日志去重，语义同 writeRawPcm
+        var streamTargetMs = 0L
+        var streamBufferingLogged = false
 
         try {
-            extractor.setDataSource(file.absolutePath)
+            if (streaming) {
+                dataSource = GrowingFileDataSource(file, RandomAccessFile(file, "r"), totalBytes)
+                extractor.setDataSource(dataSource)
+            } else {
+                extractor.setDataSource(file.absolutePath)
+            }
             val trackIndex = findAudioTrack(extractor)
             if (trackIndex < 0) {
                 emitError("No audio track was found in ${file.name}.")
@@ -416,7 +816,7 @@ class UsbExclusiveAudioEngine(
             )
 
             if (mime == "audio/raw") {
-                writeRawPcm(extractor, file, format, sampleRate, channels, durationMs, target, startMs)
+                writeRawPcm(extractor, file, format, sampleRate, channels, durationMs, target, startMs, streaming)
                 return
             }
 
@@ -455,12 +855,16 @@ class UsbExclusiveAudioEngine(
                 consumePendingSeekMs()?.let { seekMs ->
                     val seekUs = seekMs * 1000
                     UsbDiagnostics.i(tag, "exclusive decoder seek to ${seekMs}ms.")
+                    // seek 不 flush：丢在途 URB 会瞬断 ISO 流出小音爆（与 DoP 同因）。
+                    // 只在解码侧跳位，旧缓冲（约一个水位）放完后无缝续上新位置。
                     extractor.seekTo(seekUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                     codec.flush()
                     packetizer?.reset()
                     sawInputEos = false
                     outputDone = false
                     lastPositionEmitMs = -1L
+                    streamTargetMs = seekMs
+                    streamBufferingLogged = false
                     updateState(
                         currentState + mapOf(
                             "active" to true,
@@ -481,6 +885,21 @@ class UsbExclusiveAudioEngine(
                             -1
                         }
                         if (sampleSize < 0) {
+                            if (streaming && file.exists()) {
+                                // 流式下载未完成，读到 -1 不是真 EOF：seek 落在未下载区或
+                                // 顺序播到当前下载末尾。空帧还回 input buffer，等下载推进后
+                                // 回到当前位置重探，绝不置 EOS 去跳下一首（跳歌会爆音）。
+                                codec.queueInputBuffer(inputIndex, 0, 0, 0, 0)
+                                if (!streamBufferingLogged) {
+                                    streamBufferingLogged = true
+                                    UsbDiagnostics.i(tag, "streaming decoder buffering at ${streamTargetMs}ms, waiting for download")
+                                }
+                                Thread.sleep(80)
+                                if (pendingSeekMs.get() < 0L) {
+                                    extractor.seekTo(streamTargetMs * 1000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                                }
+                                continue
+                            }
                             codec.queueInputBuffer(
                                 inputIndex,
                                 0,
@@ -490,6 +909,7 @@ class UsbExclusiveAudioEngine(
                             )
                             sawInputEos = true
                         } else {
+                            streamBufferingLogged = false
                             codec.queueInputBuffer(
                                 inputIndex,
                                 0,
@@ -525,6 +945,7 @@ class UsbExclusiveAudioEngine(
                     } else {
                         SystemClock.elapsedRealtime() - startMs
                     }
+                    streamTargetMs = positionMs
                     if (positionMs - lastPositionEmitMs >= 250) {
                         lastPositionEmitMs = positionMs
                         updateState(
@@ -579,12 +1000,15 @@ class UsbExclusiveAudioEngine(
                 }
             }
 
+            UsbDiagnostics.i(tag, "exclusive decode reached end of stream, flushing remainder.")
             packetizer?.flush()
             if (!stopped.get()) {
+                workerEndedAtEof = true
                 updateState(inactiveState("USB exclusive playback completed."))
             }
         } catch (error: Throwable) {
             UsbDiagnostics.w("UsbExclusiveAudioEngine", "Exclusive playback failed.", error)
+            sessionBroken = true
             emitError(error.message ?: "USB exclusive playback failed.")
         } finally {
             try {
@@ -593,9 +1017,229 @@ class UsbExclusiveAudioEngine(
             }
             codec?.release()
             extractor.release()
-            UsbExclusiveNative.close()
-            connection?.close()
-            connection = null
+            runCatching { dataSource?.close() }
+            if (sessionBroken) {
+                hardCloseSession("decode worker failed")
+            } else {
+                // 会话留给下一首热复用，短时间内没有新的 start 再关
+                scheduleDeferredClose()
+            }
+        }
+    }
+
+    /**
+     * 流式独占的数据源：文件仍在下载增长中。读到未下载区域时等数据，
+     * 解码线程随之停在 readSampleData 上，USB 端表现与用户暂停一致（不爆音）；
+     * 恢复要求多攒一段余量，避免走走停停。下载完成时 Dart 侧把 .part 改名为
+     * 正式缓存名，已打开的 fd 不受影响，据"原路径消失"判断下载结束。
+     */
+    private inner class GrowingFileDataSource(
+        private val partFile: File,
+        private val input: RandomAccessFile,
+        private val totalBytes: Long = 0L,
+    ) : MediaDataSource() {
+        private val rebufferBytes = 256L * 1024L
+        private var bufferingLogged = false
+
+        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+            if (size <= 0) {
+                return 0
+            }
+            var required = position + size
+            while (!stopped.get()) {
+                val complete = !partFile.exists()
+                val length = input.length()
+                if (complete || length >= required) {
+                    if (position >= length) {
+                        return -1
+                    }
+                    input.seek(position)
+                    return input.read(buffer, offset, minOf(size.toLong(), length - position).toInt())
+                }
+                if (!bufferingLogged) {
+                    bufferingLogged = true
+                    UsbDiagnostics.i(
+                        tag,
+                        "streaming source buffering: need=${position + size}, have=$length",
+                    )
+                }
+                required = position + size + rebufferBytes
+                Thread.sleep(50)
+            }
+            return -1
+        }
+
+        override fun getSize(): Long {
+            // 下载完成后返回真实大小。下载中返回估算总大小（偏大保证 ≥ 真实），
+            // 让 MediaExtractor 认定文件有界、可按 FLAC seektable 定位到任意时间点
+            // 去 seek 未下载区（readAt 再按当前 .part 长度兜底等待下载）。估算缺失
+            // （0）时退回 -1（旧行为：只能顺序解码，seek 未下载区会误判 EOF）。
+            if (!partFile.exists()) {
+                return input.length()
+            }
+            return if (totalBytes > 0L) maxOf(totalBytes, input.length()) else -1L
+        }
+
+        override fun close() {
+            input.close()
+        }
+    }
+
+    /**
+     * DSD 文件的 DoP 输出主循环：DsdFileReader → DopPacketizer → 现有 PcmIsoPacketizer。
+     * DoP 帧被当作普通 24-bit PCM 打包（帧率 = DSD 速率 ÷ 16），24→32 slot 的高位对齐
+     * 恰好满足 DoP 低 8 位补零的要求，传输层零改动。
+     * 关键约束：DoP 路径上不允许任何 DSP（音量/抖动/重采样都会破坏标记、输出全幅噪声）；
+     * 暂停时必须持续发 DoP 封装的 0x69 静音——发 PCM 零或停流会让 DAC 掉出 DSD 模式并可能爆音。
+     */
+    private fun dsdDecodeAndWrite(
+        reader: DsdFileReader,
+        target: OutputTarget,
+        streamingFile: File? = null,
+        nativeFormat: String? = null,
+    ) {
+        var lastPositionEmitMs = 0L
+        // 流式下载中的缓冲恢复水位：饥饿后攒到该长度才继续读，避免走走停停
+        var streamingResumeBytes = 0L
+        var streamingBufferingLogged = false
+        // nativeFormat=null 走 DoP（24-bit 帧，帧率=速率÷16）；否则按字节排列直发
+        //（帧率=速率÷8÷每采样字节数），两者都复用 PcmIsoPacketizer 的水位/反馈节奏
+        val nativeBps = nativeDsdBytesPerSample(nativeFormat)
+        val frameRate = if (nativeBps != null) reader.sampleRate / 8 / nativeBps else reader.dopFrameRate
+        val frameBitDepth = if (nativeBps != null) nativeBps * 8 else 24
+        val modeLabel = if (nativeBps != null) "native($nativeFormat)" else "DoP"
+        // 编码相位/帧对齐跨曲目延续：会话存活期间复用同一编码器与打包器
+        val dop = sessionDsd ?: run {
+            val created: DsdStreamEncoder = if (nativeBps != null) {
+                NativeDsdPacketizer(reader.channels, nativeBps, nativeFormat == "u32be")
+            } else {
+                DopPacketizer(reader.channels)
+            }
+            sessionDsd = created
+            created
+        }
+        try {
+            val packetizer = sessionPacketizer
+                ?.also {
+                    activePacketsPerSecond = target.packetsPerSecond
+                    applyNativeTargetBuffer(target.packetsPerSecond)
+                }
+                ?: createPacketizer(
+                    frameRate,
+                    reader.channels,
+                    frameBitDepth,
+                    target,
+                    applyDigitalVolume = false,
+                ).also { sessionPacketizer = it }
+            updateState(
+                currentState + mapOf(
+                    "active" to true,
+                    "playing" to !paused.get(),
+                    "durationMs" to reader.durationMs,
+                    "sampleRate" to reader.sampleRate,
+                    "bitDepth" to 1,
+                    "message" to "USB exclusive $modeLabel streaming DSD${reader.dsdMultiple ?: ""} " +
+                        "(${reader.formatName}) to ${target.endpointLabel}.",
+                ),
+            )
+
+            // 单次读写约 10 ms 的量；写满水位后由 native 阻塞回收自然限速
+            val silenceFramesPerWrite = maxOf(1, frameRate / 100)
+            val buffer = ByteArray(reader.channels * (nativeBps ?: 2) * silenceFramesPerWrite)
+
+            while (!stopped.get()) {
+                consumePendingSeekMs()?.let { seekMs ->
+                    // DoP seek 不 flush 也不复位：丢 URB 会瞬断 ISO 流让 DAC
+                    // 掉出 DSD 模式再重锁（就是 seek 咔嗒声）。旧缓冲（约一个
+                    // 水位）放完无缝续上新位置，标记相位全程连续；先把不足
+                    // 一帧的余量补齐保持帧对齐
+                    packetizer.write(dop.drain())
+                    val actualMs = reader.seekTo(seekMs)
+                    lastPositionEmitMs = -1L
+                    updateState(
+                        currentState + mapOf(
+                            "active" to true,
+                            "playing" to !paused.get(),
+                            "positionMs" to actualMs,
+                            "message" to "Seeked.",
+                        ),
+                    )
+                }
+
+                if (paused.get()) {
+                    packetizer.write(dop.encodeSilence(silenceFramesPerWrite))
+                    continue
+                }
+
+                // 流式下载：数据没跟上时垫 DSD 静音等下载，保持 DAC 停留在 DSD
+                // 模式（DoP/native 都绝不能断流，断点样本也不能修改，只能发 0x69）
+                if (streamingFile != null && streamingFile.exists()) {
+                    val length = streamingFile.length()
+                    val ready = reader.canReadAt(length) &&
+                        (streamingResumeBytes == 0L || length >= streamingResumeBytes)
+                    if (!ready) {
+                        if (streamingResumeBytes == 0L) {
+                            streamingResumeBytes = length + 256L * 1024L
+                        }
+                        if (!streamingBufferingLogged) {
+                            streamingBufferingLogged = true
+                            UsbDiagnostics.i(
+                                tag,
+                                "DSD streaming buffering at ${reader.positionMs}ms, have=$length",
+                            )
+                        }
+                        packetizer.write(dop.encodeSilence(silenceFramesPerWrite))
+                        continue
+                    }
+                    streamingResumeBytes = 0L
+                    streamingBufferingLogged = false
+                }
+
+                val count = reader.read(buffer)
+                if (count < 0) {
+                    // 结尾不足一帧的余量补 0x69，再垫约 200ms 静音把尾部完整送出，
+                    // 同时盖住自动切歌的空窗，DAC 不掉出 DSD 模式
+                    packetizer.write(dop.drain())
+                    packetizer.write(dop.encodeSilence(silenceFramesPerWrite * 20))
+                    packetizer.flush()
+                    break
+                }
+                packetizer.write(dop.encode(buffer, count))
+
+                val positionMs = reader.positionMs
+                if (positionMs - lastPositionEmitMs >= 250) {
+                    lastPositionEmitMs = positionMs
+                    updateState(
+                        currentState + mapOf(
+                            "active" to true,
+                            "playing" to !paused.get(),
+                            "positionMs" to positionMs,
+                        ),
+                    )
+                }
+            }
+
+            UsbDiagnostics.i(tag, "exclusive DSD playback reached end of stream.")
+            if (!stopped.get()) {
+                workerEndedAtEof = true
+                updateState(inactiveState("USB exclusive playback completed."))
+            }
+        } catch (error: Throwable) {
+            UsbDiagnostics.w(tag, "Exclusive DSD playback failed.", error)
+            sessionBroken = true
+            emitError(error.message ?: "USB exclusive DSD playback failed.")
+        } finally {
+            runCatching { reader.close() }
+            if (sessionBroken) {
+                hardCloseSession("DSD worker failed")
+            } else {
+                // 会话留给下一首热复用；自然播完立即接上空窗静音填充，
+                // 短时间内没有新的 start 再由延迟关闭拆链路
+                if (workerEndedAtEof) {
+                    startDopIdleFiller()
+                }
+                scheduleDeferredClose()
+            }
         }
     }
 
@@ -608,6 +1252,7 @@ class UsbExclusiveAudioEngine(
         durationMs: Long?,
         target: OutputTarget,
         startMs: Long,
+        streaming: Boolean = false,
     ) {
         if (sampleRate == null || channels == null) {
             emitError("Raw PCM stream is missing sample rate or channel count.")
@@ -641,6 +1286,10 @@ class UsbExclusiveAudioEngine(
         var lastPositionEmitMs = 0L
         var lastSampleTimeUs: Long? = null
         var rawChunkLogCount = 0
+        // 流式独占当前应播位置（ms）：读到已下载末尾或 seek 落在未下载区时，
+        // 回到这里重试，绝不误判成播放结束去跳下一首
+        var streamTargetMs = 0L
+        var streamBufferingLogged = false
 
         UsbDiagnostics.i(
             tag,
@@ -676,10 +1325,14 @@ class UsbExclusiveAudioEngine(
             consumePendingSeekMs()?.let { seekMs ->
                 val seekUs = seekMs * 1000
                 UsbDiagnostics.i(tag, "exclusive raw PCM seek to ${seekMs}ms.")
+                // seek 不 flush：丢在途 URB 会瞬断 ISO 流出小音爆（与 DoP 同因）。
+                // 只在解码侧跳位，旧缓冲（约一个水位）放完后无缝续上新位置。
                 extractor.seekTo(seekUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
                 packetizer.reset()
                 lastPositionEmitMs = -1L
                 lastSampleTimeUs = null
+                streamTargetMs = seekMs
+                streamBufferingLogged = false
                 updateState(
                     currentState + mapOf(
                         "active" to true,
@@ -694,8 +1347,25 @@ class UsbExclusiveAudioEngine(
             val sampleTimeUs = extractor.sampleTime
             val sampleSize = extractor.readSampleData(buffer, 0)
             if (sampleSize < 0) {
+                // 流式下载没结束时，读到 -1 不是真 EOF：多半是 seek 落在尚未下载的
+                // 区段，或顺序播到了当前下载末尾。等下载推进后回到当前位置重探，
+                // 绝不当成播完去跳下一首（跳歌会重建会话、DAC 重锁并爆音）。
+                // 循环顶部照常响应停止/暂停/新的用户 seek，不会卡死。
+                if (streaming && file.exists()) {
+                    if (!streamBufferingLogged) {
+                        streamBufferingLogged = true
+                        UsbDiagnostics.i(tag, "streaming raw PCM buffering at ${streamTargetMs}ms, waiting for download")
+                    }
+                    Thread.sleep(80)
+                    // 没有更新的用户 seek 时重探当前位置；有的话留给顶部消费新目标
+                    if (pendingSeekMs.get() < 0L) {
+                        extractor.seekTo(streamTargetMs * 1000, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    }
+                    continue
+                }
                 break
             }
+            streamBufferingLogged = false
             val data = ByteArray(sampleSize)
             buffer.position(0)
             buffer.limit(sampleSize)
@@ -713,6 +1383,9 @@ class UsbExclusiveAudioEngine(
                 rawChunkLogCount++
             }
             lastSampleTimeUs = sampleTimeUs
+            if (sampleTimeUs > 0) {
+                streamTargetMs = sampleTimeUs / 1000
+            }
             packetizer.write(data)
 
             val positionMs = if (sampleTimeUs > 0) {
@@ -733,8 +1406,14 @@ class UsbExclusiveAudioEngine(
             extractor.advance()
         }
 
+        UsbDiagnostics.i(
+            tag,
+            "exclusive raw PCM loop exit: stopped=${stopped.get()}, streaming=$streaming, " +
+                "partExists=${file.exists()}, lastPos=${streamTargetMs}ms",
+        )
         packetizer.flush()
         if (!stopped.get()) {
+            workerEndedAtEof = true
             updateState(inactiveState("USB exclusive playback completed."))
         }
     }
@@ -744,6 +1423,7 @@ class UsbExclusiveAudioEngine(
         channels: Int,
         bitDepth: Int,
         target: OutputTarget,
+        applyDigitalVolume: Boolean = true,
     ): PcmIsoPacketizer {
         val inputBytesPerSample = bytesPerSampleForBitDepth(bitDepth)
         val usbBytesPerSample = target.usbBytesPerSample
@@ -792,6 +1472,11 @@ class UsbExclusiveAudioEngine(
             feedbackFramesPerPacketQ16 = target.feedbackEndpoint?.let {
                 { UsbExclusiveNative.feedbackFramesPerPacketQ16() }
             },
+            volumeGainQ16 = if (applyDigitalVolume) {
+                { pcmVolumeGainQ16 }
+            } else {
+                null
+            },
         ) { data, packetLengths, packetCount ->
             val error = UsbExclusiveNative.writeIsoPackets(data, packetLengths, packetCount)
             if (error != null) {
@@ -812,6 +1497,7 @@ class UsbExclusiveAudioEngine(
         device: UsbDevice,
         target: OutputTarget,
         sampleRate: Int,
+        quirk: DacQuirk = DacQuirk(),
     ): String? {
         val controlInterface = findAudioControlInterface(device)
         val controlInterfaceNumber = controlInterface?.id ?: target.usbInterface.id
@@ -852,6 +1538,14 @@ class UsbExclusiveAudioEngine(
                     "UAC2 clock SET_CUR sampleRate=$sampleRate, clockSourceId=$clockSourceId, " +
                     "controlInterface=$controlInterfaceNumber, result=$result",
                 )
+                // quirk：部分 DAC SET_CUR 后需要几十 ms 才锁定新时钟
+                if (quirk.clockSetCurDelayMs > 0) {
+                    Thread.sleep(quirk.clockSetCurDelayMs.toLong())
+                }
+                if (quirk.clockSkipGetCurValidation) {
+                    // quirk：个别设备 GET_CUR 返回垃圾但 SET_CUR 实际生效
+                    return null
+                }
                 val readBack = readUac2ClockSampleRate(
                     connection,
                     clockSourceId,
@@ -889,6 +1583,9 @@ class UsbExclusiveAudioEngine(
                     target.endpoint.address.toString(16)
                 }, result=$result",
             )
+            if (quirk.clockSetCurDelayMs > 0) {
+                Thread.sleep(quirk.clockSetCurDelayMs.toLong())
+            }
             return null
         } catch (error: RuntimeException) {
             UsbDiagnostics.w(tag, "USB audio clock configuration failed.", error)
@@ -1052,9 +1749,24 @@ class UsbExclusiveAudioEngine(
                         "interval=${candidate.endpoint.interval}/" +
                         "feedback=${candidate.feedbackEndpointLabel}/" +
                         "usbBytes=${candidate.usbBytesPerSample}/bits=${candidate.usbBitResolution}/" +
+                        "raw=${candidate.isRawData}/" +
                         "format=${candidate.formatInfo}"
                 },
                 "clockSourceId" to clockSourceId,
+                // quirk 匹配结果：命中哪条 / 未命中用默认值，以及各字段生效值
+                "quirkMatch" to (UsbDacQuirks.matchDescription(
+                    context,
+                    device.vendorId,
+                    device.productId,
+                ) ?: "none (defaults)"),
+                "quirkEffective" to UsbDacQuirks.forDevice(
+                    context,
+                    device.vendorId,
+                    device.productId,
+                ).toString(),
+                "quirkLoadErrors" to UsbDacQuirks.loadErrors(context)
+                    .joinToString("; ")
+                    .takeIf { it.isNotEmpty() },
             )
         } catch (error: RuntimeException) {
             mapOf(
@@ -1089,8 +1801,12 @@ class UsbExclusiveAudioEngine(
         sampleRate: Int? = null,
         channels: Int = 2,
         bitDepth: Int? = null,
+        requireRawData: Boolean = false,
     ): OutputTarget? {
+        // native DSD 要求 RAW_DATA alt（bmFormats D31）；quirk 驱动的设备描述符
+        // 可能不声明，此时调用方传 false、靠 bitDepth 匹配 subslot
         val candidates = collectOutputCandidates(device, streamingFormats)
+            .filter { !requireRawData || it.isRawData }
 
         if (candidates.isEmpty()) {
             return null
@@ -1234,6 +1950,16 @@ class UsbExclusiveAudioEngine(
                         } else {
                             existing.formatType
                         }
+                        // UAC2 AS_GENERAL（16 字节）的 bmFormats：D31=RAW_DATA 即 native DSD alt；
+                        // UAC1 该描述符只有 7 字节，天然不会进这个分支
+                        val bmFormats = if (length >= 10) {
+                            (descriptors[offset + 6].toInt() and 0xff) or
+                                ((descriptors[offset + 7].toInt() and 0xff) shl 8) or
+                                ((descriptors[offset + 8].toInt() and 0xff) shl 16) or
+                                ((descriptors[offset + 9].toInt() and 0xff) shl 24)
+                        } else {
+                            existing.bmFormats
+                        }
                         val channels = if (length >= 11) {
                             descriptors[offset + 10].toInt() and 0xff
                         } else {
@@ -1242,22 +1968,29 @@ class UsbExclusiveAudioEngine(
                         formats[key] = existing.copy(
                             terminalLink = terminalLink,
                             formatType = formatType,
+                            bmFormats = bmFormats,
                             channels = channels,
                         )
                     }
                     0x02 -> {
-                        if (length >= 6) {
-                            formats[key] = existing.copy(
-                                formatType = descriptors[offset + 3].toInt() and 0xff,
-                                subslotSize = descriptors[offset + 4].toInt() and 0xff,
-                                bitResolution = descriptors[offset + 5].toInt() and 0xff,
-                            )
-                        } else if (length >= 7) {
+                        // UAC1 Type-I 格式描述符比 UAC2 多一个 bNrChannels 字段、且带采样率表，
+                        // 描述符更长（length>=7）；UAC2 Type-I 固定 length=6。原实现两个分支判据
+                        // 顺序写反（先判 length>=6），导致 UAC1 描述符错误命中 UAC2 布局，把
+                        // bSubframeSize(2/3/4) 当成位深，16-bit 被当 2/3/4-bit 严重右移打成静音。
+                        if (length >= 7) {
+                            // UAC1: bFormatType, bNrChannels, bSubframeSize, bBitResolution, …
                             formats[key] = existing.copy(
                                 formatType = descriptors[offset + 3].toInt() and 0xff,
                                 channels = descriptors[offset + 4].toInt() and 0xff,
                                 subslotSize = descriptors[offset + 5].toInt() and 0xff,
                                 bitResolution = descriptors[offset + 6].toInt() and 0xff,
+                            )
+                        } else if (length >= 6) {
+                            // UAC2: bFormatType, bSubslotSize, bBitResolution
+                            formats[key] = existing.copy(
+                                formatType = descriptors[offset + 3].toInt() and 0xff,
+                                subslotSize = descriptors[offset + 4].toInt() and 0xff,
+                                bitResolution = descriptors[offset + 5].toInt() and 0xff,
                             )
                         }
                     }
@@ -1291,6 +2024,7 @@ class UsbExclusiveAudioEngine(
         var currentInterfaceSubclass = -1
         var terminalLink: Int? = null
         var firstClockSourceId: Int? = null
+        var hasClockSource = false
         val inputTerminalClockIds = mutableMapOf<Int, Int>()
         val outputTerminalClockIds = mutableMapOf<Int, Int>()
 
@@ -1309,6 +2043,7 @@ class UsbExclusiveAudioEngine(
                 val subtype = descriptors[offset + 2].toInt() and 0xff
                 when (subtype) {
                     0x0a -> {
+                        hasClockSource = true
                         if (length >= 4 && firstClockSourceId == null) {
                             firstClockSourceId = descriptors[offset + 3].toInt() and 0xff
                         }
@@ -1341,6 +2076,18 @@ class UsbExclusiveAudioEngine(
             }
 
             offset += length
+        }
+
+        // UAC1 设备没有 clock source 实体（描述符里不会出现 CLOCK_SOURCE，子类型 0x0a），
+        // 采样率必须通过端点 SET_CUR 设置（见 configureUsbAudioClock 的 UAC1 分支）。
+        // 下面的 terminal→clock 映射按 UAC2 布局解析，对 UAC1 会误读
+        // （把 INPUT_TERMINAL 的 bNrChannels 当成 clockSourceId），因此无 clock source 时直接返回 null。
+        if (!hasClockSource) {
+            UsbDiagnostics.i(
+                tag,
+                "no UAC2 clock source entity (UAC1 device); using endpoint SET_CUR.",
+            )
+            return null
         }
 
         val linkedTerminal = terminalLink
@@ -1378,12 +2125,75 @@ class UsbExclusiveAudioEngine(
         }
     }
 
+    // 系统 MediaExtractor 支持、可边下边播（流式独占）的常见有损容器扩展名。
+    // 与 Dart 侧 _exclusivePlayablePath 的流式白名单保持一致；wv/ape 等系统不支持的不在此列。
+    private val streamableLossyExts = setOf("mp3", "m4a", "m4b", "mp4", "aac", "ogg", "oga", "opus")
+
     private fun isSupportedFile(filePath: String, sourceFormat: String?): Boolean {
+        // 已知无损容器与 DSD 直接放行（含仍在下载的 .part 流式无损），零探测开销
         if (sourceFormat == "flac" || sourceFormat == "wav" || sourceFormat == "wave") {
             return true
         }
+        if (isDsdFile(filePath, sourceFormat)) {
+            return true
+        }
         val lower = filePath.lowercase(Locale.ROOT)
-        return lower.endsWith(".flac") || lower.endsWith(".wav") || lower.endsWith(".wave")
+        // 流式独占：file 仍在下载增长（xxx.ext.part），按真实扩展名判定，不剥 .part 会误判
+        val streaming = lower.endsWith(".part")
+        val effective = if (streaming) lower.removeSuffix(".part") else lower
+        if (effective.endsWith(".flac") || effective.endsWith(".wav") || effective.endsWith(".wave")) {
+            return true
+        }
+        if (streaming) {
+            // 下载中文件无法完整探测：按扩展名放行系统可流式解码的有损容器（mp3/m4a/ogg 等），
+            // 与 FLAC 流式独占同等对待；wv/ape 等系统不支持的不会以 .part 走到这里。
+            val ext = effective.substringAfterLast('.', "")
+            return ext in streamableLossyExts
+        }
+        // 完整文件的其余格式（m4a/AAC、mp3、ogg 等）以系统解码器能力为准：MediaCodec 能解出 PCM
+        // 就走独占直驱；系统解不了的容器（WavPack/APE 等）判为不支持，交由 Dart 侧回退共享输出——
+        // 绝不能进独占后 worker 线程再异步失败导致无声。
+        return isMediaCodecDecodable(filePath)
+    }
+
+    /// 用 MediaExtractor + MediaCodecList 探测文件能否被系统解码器解成 PCM。
+    /// 只查解码器可用性、不实例化 codec，保守判定：宁可返回 false 回退共享，也不误放导致独占无声。
+    private fun isMediaCodecDecodable(filePath: String): Boolean {
+        val extractor = MediaExtractor()
+        return try {
+            extractor.setDataSource(filePath)
+            val trackIndex = findAudioTrack(extractor)
+            if (trackIndex < 0) {
+                return false
+            }
+            val format = extractor.getTrackFormat(trackIndex)
+            val mime = format.getString(MediaFormat.KEY_MIME) ?: return false
+            // 原始 PCM（如 WAV）由 writeRawPcm 直通，无需解码器
+            if (mime == "audio/raw") {
+                return true
+            }
+            val decoder = MediaCodecList(MediaCodecList.REGULAR_CODECS)
+                .findDecoderForFormat(format)
+            val decodable = decoder != null
+            UsbDiagnostics.i(tag, "decodability probe file=$filePath, mime=$mime, decoder=${decoder ?: "none"}")
+            decodable
+        } catch (error: Exception) {
+            UsbDiagnostics.w(tag, "decodability probe failed for $filePath: ${error.message}")
+            false
+        } finally {
+            try {
+                extractor.release()
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun isDsdFile(filePath: String, sourceFormat: String?): Boolean {
+        if (sourceFormat == "dsf" || sourceFormat == "dff") {
+            return true
+        }
+        val lower = filePath.lowercase(Locale.ROOT)
+        return lower.endsWith(".dsf") || lower.endsWith(".dff")
     }
 
     private fun capability(
@@ -1488,6 +2298,9 @@ class UsbExclusiveAudioEngine(
 
         val usbBitResolution: Int?
             get() = formatInfo?.bitResolution?.takeIf { it > 0 }
+
+        val isRawData: Boolean
+            get() = formatInfo?.isRawData == true
     }
 
     private data class StreamingFormatInfo(
@@ -1499,7 +2312,12 @@ class UsbExclusiveAudioEngine(
         val channels: Int? = null,
         val subslotSize: Int? = null,
         val bitResolution: Int? = null,
-    )
+        val bmFormats: Int? = null,
+    ) {
+        // UAC2 bmFormats 的 D31 = RAW_DATA，即 native DSD alt
+        val isRawData: Boolean
+            get() = bmFormats != null && (bmFormats and (1 shl 31)) != 0
+    }
 
     private class PcmIsoPacketizer(
         private val sampleRate: Int,
@@ -1511,6 +2329,7 @@ class UsbExclusiveAudioEngine(
         private val usbBitResolution: Int,
         private val feedbackOutputPacketDivisor: Int,
         private val feedbackFramesPerPacketQ16: (() -> Int)? = null,
+        private val volumeGainQ16: (() -> Int)? = null,
         private val writePackets: (ByteArray, IntArray, Int) -> Unit,
     ) {
         private val pending = ByteArrayOutputStream()
@@ -1642,7 +2461,10 @@ class UsbExclusiveAudioEngine(
             String.format(Locale.US, "%.6f", value.toDouble() / 65536.0)
 
         private fun convertPcmToUsbSlots(data: ByteArray): ByteArray {
-            if (inputBytesPerSample == usbBytesPerSample && inputBitDepth == usbBitResolution) {
+            val gainQ16 = volumeGainQ16?.invoke() ?: UNITY_GAIN_Q16
+            val applyGain = gainQ16 < UNITY_GAIN_Q16
+            // 满刻度且无需重排位深时零拷贝直通，保持位完美。
+            if (!applyGain && inputBytesPerSample == usbBytesPerSample && inputBitDepth == usbBitResolution) {
                 return data
             }
 
@@ -1652,7 +2474,11 @@ class UsbExclusiveAudioEngine(
             var outputOffset = 0
             repeat(frames) {
                 repeat(inputBytesPerFrame / inputBytesPerSample) {
-                    val sample = readSignedLittleEndian(data, inputOffset, inputBytesPerSample, inputBitDepth)
+                    var sample = readSignedLittleEndian(data, inputOffset, inputBytesPerSample, inputBitDepth)
+                    if (applyGain) {
+                        // 在源位深域施加线性增益（Long 防溢出）再做 slot 对齐移位。
+                        sample = ((sample.toLong() * gainQ16) shr 16).toInt()
+                    }
                     val shifted = if (usbBitResolution >= inputBitDepth) {
                         sample shl (usbBitResolution - inputBitDepth)
                     } else {

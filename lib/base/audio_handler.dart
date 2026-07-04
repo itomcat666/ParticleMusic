@@ -95,6 +95,8 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   Duration _playedDuration = Duration.zero;
   Duration _usbExclusivePosition = Duration.zero;
   bool _usbExclusiveActive = false;
+  // 主动停止独占（切歌/停止播放）时置真，避免独占状态监听把主动停当成意外中断而误触发回退续播
+  bool _intentionalExclusiveStop = false;
   bool _suppressPlayerCompleted = false;
   final _positionController = StreamController<Duration>.broadcast();
 
@@ -104,6 +106,8 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
 
   bool isLoading = false;
   bool isSyncing = false;
+  // load 的代次号：云端下载/权限弹窗等慢路径期间用户再切歌时，旧的 load 凭它自行作废
+  int _loadGeneration = 0;
 
   MyAudioHandler() {
     // avoid reading .lrc files
@@ -165,6 +169,11 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     });
 
     usbExclusivePlaybackStateNotifier.addListener(_handleUsbExclusiveState);
+    usbExclusiveVolumeKeyNotifier.addListener(_handleUsbExclusiveVolumeKey);
+    // 切换音量控制方式后立即按新方式重下发（原始数字电平旁路、其余数字音量）。
+    usbAudioPreferences.volumeControlModeNotifier.addListener(() {
+      _applyUsbExclusiveVolume(_perceptualVolumeGain(volumeNotifier.value));
+    });
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addObserver(this);
     }
@@ -208,6 +217,10 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     _usbExclusiveActive = state.active;
 
     if (state.active) {
+      // 刚进入独占时把当前音量按当前控制方式下发一次，避免独占起播后音量失控。
+      if (!wasActive) {
+        _applyUsbExclusiveVolume(_perceptualVolumeGain(volumeNotifier.value));
+      }
       // 独占播放时，位置由独占链路上报，驱动进度流。
       _positionController.add(state.position);
       if (isPlayingNotifier.value != state.playing) {
@@ -221,7 +234,34 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     }
 
     if (wasActive && state.message?.contains('completed') == true) {
-      unawaited(skipToNext());
+      logger.output("usb exclusive completed -> auto advance");
+      debugPrint("usb exclusive completed -> auto advance");
+      // 对齐共享路径 completed 分支的语义：单曲循环重载当前曲、睡眠定时器播完暂停
+      final needPauseTmp = needPause;
+      unawaited(() async {
+        while (isSyncing) {
+          await Future.delayed(Duration(milliseconds: 50));
+        }
+        if (playModeNotifier.value == 2) {
+          // repeat
+          await load();
+        } else {
+          await skipToNext();
+        }
+        if (needPauseTmp) {
+          await pause();
+        }
+      }());
+    } else if (wasActive && !_intentionalExclusiveStop) {
+      // 独占播放中途意外失活（拔出 DAC / 写失败 ENODEV 等）：回退系统输出，从中断位置续播，
+      // 不再卡住需要手动切歌才恢复。
+      logger.output(
+        "usb exclusive interrupted -> system output fallback:${state.message}",
+      );
+      debugPrint(
+        "usb exclusive interrupted -> system output fallback:${state.message}",
+      );
+      unawaited(_resumeOnSystemOutputAfterExclusiveInterrupt(state.position));
     }
   }
 
@@ -233,6 +273,78 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       scheduleMicrotask(() {
         _suppressPlayerCompleted = false;
       });
+    }
+  }
+
+  /// 主动停止独占（切歌/停止播放）时置标志，避免独占状态监听把这次失活
+  /// 误判成意外中断而触发回退续播。
+  Future<void> _stopExclusiveIntentionally() async {
+    _intentionalExclusiveStop = true;
+    try {
+      await usbAudioService.stopExclusivePlayback();
+    } finally {
+      _intentionalExclusiveStop = false;
+    }
+  }
+
+  /// 用系统输出（media_kit）打开歌曲并按当前播放状态起播。
+  /// 供 load() 非独占分支与独占意外中断回退续播复用。
+  Future<void> _openPlayerMedia(MyAudioMetadata currentSong) async {
+    if (currentSong.cacheExist) {
+      await _player.open(
+        Media(currentSong.cachePath!),
+        play: isPlayingNotifier.value,
+      );
+      return;
+    }
+    String? resource;
+    bool needHeader = false;
+    switch (currentSong.sourceType) {
+      case .webdav:
+        final tmpPath = await convertToRealPathIfNeed(currentSong.path!);
+        if (tmpPath == null) {
+          needHeader = true;
+        } else {
+          resource = tmpPath;
+        }
+        break;
+      case .navidrome:
+        currentSong.path ??= navidromeClient!.getStreamUrl(currentSong.id);
+        break;
+      case .emby:
+        currentSong.path ??= embyClient!.audioUrl(currentSong.id);
+        break;
+      default:
+        break;
+    }
+    resource ??= currentSong.path!;
+    await _player.open(
+      Media(resource, httpHeaders: needHeader ? webdavClient?.headers : null),
+      play: isPlayingNotifier.value,
+    );
+  }
+
+  /// 独占播放中途意外中断（拔出 DAC、写失败 ENODEV 等）时回退到系统输出，
+  /// 从中断位置续播，避免卡住需要手动切歌才恢复。
+  Future<void> _resumeOnSystemOutputAfterExclusiveInterrupt(
+    Duration position,
+  ) async {
+    final currentSong = currentSongNotifier.value;
+    if (currentSong == null) {
+      return;
+    }
+    final generation = _loadGeneration;
+    try {
+      await _applyUsbOutputForSong(currentSong);
+      if (generation != _loadGeneration) return;
+      await _openPlayerMedia(currentSong);
+      if (generation != _loadGeneration) return;
+      if (position > Duration.zero) {
+        await _player.seek(position);
+      }
+    } catch (error) {
+      logger.output("usb exclusive interrupt fallback failed:$error");
+      debugPrint("usb exclusive interrupt fallback failed:$error");
     }
   }
 
@@ -575,6 +687,7 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   }
 
   Future<void> load() async {
+    final generation = ++_loadGeneration;
     if (currentSongNotifier.value != null) {
       if (_playLastSyncTime != null) {
         _playedDuration += DateTime.now().difference(_playLastSyncTime!);
@@ -598,17 +711,27 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     final currentSong = playQueue[currentIndex];
 
     await _setLyricsAndUpdateColors(currentSong);
+    if (generation != _loadGeneration) {
+      return;
+    }
     _superLyric.updateLines(currentSong.parsedLyrics!.lines);
 
     currentSongNotifier.value = currentSong;
 
     isLoading = true;
     try {
-      await usbAudioService.stopExclusivePlayback();
+      await _stopExclusiveIntentionally();
       _usbExclusiveActive = false;
       _usbExclusivePosition = Duration.zero;
 
-      final openedExclusive = await _tryOpenUsbExclusive(currentSong);
+      final openedExclusive = await _tryOpenUsbExclusive(
+        currentSong,
+        generation: generation,
+      );
+      if (generation != _loadGeneration) {
+        isLoading = false;
+        return;
+      }
       if (openedExclusive) {
         await _stopPlayerForUsbExclusive();
         if (isPlayingNotifier.value) {
@@ -616,45 +739,11 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
         }
       } else {
         await _applyUsbOutputForSong(currentSong);
-        if (currentSong.cacheExist) {
-          await _player.open(
-            Media(currentSong.cachePath!),
-            play: isPlayingNotifier.value,
-          );
-        } else {
-          String? resource;
-          bool needHeader = false;
-          switch (currentSong.sourceType) {
-            case .webdav:
-              final tmpPath = await convertToRealPathIfNeed(currentSong.path!);
-              if (tmpPath == null) {
-                needHeader = true;
-              } else {
-                resource = tmpPath;
-              }
-              break;
-            case .navidrome:
-              currentSong.path ??= navidromeClient!.getStreamUrl(
-                currentSong.id,
-              );
-              break;
-            case .emby:
-              currentSong.path ??= embyClient!.audioUrl(currentSong.id);
-              break;
-            default:
-              break;
-          }
-
-          resource ??= currentSong.path!;
-
-          await _player.open(
-            Media(
-              resource,
-              httpHeaders: needHeader ? webdavClient?.headers : null,
-            ),
-            play: isPlayingNotifier.value,
-          );
+        if (generation != _loadGeneration) {
+          isLoading = false;
+          return;
         }
+        await _openPlayerMedia(currentSong);
       }
 
       if (isPlayingNotifier.value) {
@@ -675,10 +764,50 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       unawaited(_superLyric.sendStop());
     }
     updatePlaybackState(postion: Duration.zero);
+    _prefetchNextSongCache();
   }
 
-  Future<bool> _tryOpenUsbExclusive(MyAudioMetadata song) async {
+  /// 独占模式连播优化：当前曲开播后预下载队列下一首云端歌曲，
+  /// 自动切歌时下一首已整首缓存，可直接走独占。先等当前曲的缓存
+  /// 下载完（tryAddCache 按路径去重，重复调用会合并），避免抢带宽。
+  void _prefetchNextSongCache() {
+    if (!Platform.isAndroid ||
+        !usbAudioPreferences.performanceModeNotifier.value) {
+      return;
+    }
+    if (playQueue.length < 2) {
+      return;
+    }
+    final current = playQueue[currentIndex];
+    final next = playQueue[(currentIndex + 1) % playQueue.length];
+    if (next.sourceType == .local || next.cacheExist) {
+      return;
+    }
+    unawaited(() async {
+      try {
+        await library.tryAddCache(current);
+        await library.tryAddCache(next);
+        logger.output("prefetched next song cache:${next.title}");
+      } catch (error) {
+        logger.output("prefetch next cache failed:$error");
+      }
+    }());
+  }
+
+  Future<bool> _tryOpenUsbExclusive(
+    MyAudioMetadata song, {
+    int? generation,
+  }) async {
     if (!_shouldTryUsbExclusive(song)) {
+      return false;
+    }
+
+    final isDsd = song.isDsd;
+    if (isDsd &&
+        usbAudioPreferences.dsdModeNotifier.value == UsbDsdMode.pcm) {
+      // DSD 模式=PCM：由共享路径（mpv/libavcodec）解码转 PCM，不进独占直驱
+      logger.output("usb exclusive skipped:dsd pcm mode -> shared output");
+      debugPrint("usb exclusive skipped:dsd pcm mode -> shared output");
       return false;
     }
 
@@ -703,13 +832,11 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       return false;
     }
 
-    final filePath = await _exclusivePlayablePath(song);
-    if (filePath == null) {
-      return false;
-    }
-
-    final exclusiveSampleRate = _preferredExclusiveSampleRate(song);
-    if (exclusiveSampleRate == null) {
+    // DSD 走 DoP 时输出帧率由引擎按文件头计算（DSD 速率 ÷ 16），不做采样率白名单校验
+    final exclusiveSampleRate = isDsd
+        ? null
+        : _preferredExclusiveSampleRate(song);
+    if (!isDsd && exclusiveSampleRate == null) {
       // 源采样率无法在独占直驱下与 DAC 时钟对齐（没有 SRC），干净回退到系统输出而不是变调播放。
       logger.output(
         "usb exclusive fallback:unsupported source samplerate=${song.samplerate}",
@@ -720,17 +847,32 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       return false;
     }
 
+    final filePath = await _exclusivePlayablePath(song, generation: generation);
+    if (filePath == null) {
+      return false;
+    }
+    // .part 表示缓存还在下载中，走流式独占（引擎按增长中的文件读取）
+    final streaming = filePath.endsWith('.part');
+
+    if (generation != null && generation != _loadGeneration) {
+      // 权限弹窗/路径解析期间用户已切到别的歌，放弃启动独占
+      return false;
+    }
+
     final state = await usbAudioService.startExclusivePlayback(
       UsbExclusivePlaybackRequest(
         filePath: filePath,
         title: getTitle(song),
         sourceFormat: _normalizedExclusiveFormat(song),
         sampleRate: exclusiveSampleRate,
-        bitDepth: _preferredExclusiveBitDepth(),
+        bitDepth: isDsd ? null : _preferredExclusiveBitDepth(),
+        dsdMode: isDsd ? usbAudioPreferences.dsdModeNotifier.value.name : null,
         targetBufferMs: _exclusiveTargetBufferMsForLifecycle(
           WidgetsBinding.instance.lifecycleState,
         ),
         startPaused: !isPlayingNotifier.value,
+        streaming: streaming,
+        totalBytes: streaming ? _estimateStreamTotalBytes(song) : null,
       ),
     );
 
@@ -769,16 +911,36 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     if (format != null && format.isNotEmpty) {
       if (format.contains('flac')) return 'flac';
       if (format.contains('wav') || format.contains('wave')) return 'wav';
+      if (format.contains('dsf')) return 'dsf';
+      if (format.contains('dff')) return 'dff';
       return format;
     }
 
     final path = (song.cachePath ?? song.path ?? '').toLowerCase();
     if (path.endsWith('.flac')) return 'flac';
     if (path.endsWith('.wav') || path.endsWith('.wave')) return 'wav';
+    if (path.endsWith('.dsf')) return 'dsf';
+    if (path.endsWith('.dff')) return 'dff';
     return null;
   }
 
-  Future<String?> _exclusivePlayablePath(MyAudioMetadata song) async {
+  /// 流式独占的完整文件字节数估算：时长 × 码率，再放大保证 ≥ 真实大小，
+  /// 让引擎侧 MediaExtractor 能对增长中的 .part 正确 seek（真实边界由 readAt
+  /// 按当前 .part 长度兜底等待）。时长未知时返回 null（引擎回退旧行为）。
+  int? _estimateStreamTotalBytes(MyAudioMetadata song) {
+    final durationSec = song.duration?.inSeconds ?? 0;
+    if (durationSec <= 0) {
+      return null;
+    }
+    final bytesPerSecond =
+        ((song.bitrate ?? 0) > 0 ? song.bitrate! : 2000) * 1000 ~/ 8;
+    return (durationSec * bytesPerSecond * 1.2).toInt();
+  }
+
+  Future<String?> _exclusivePlayablePath(
+    MyAudioMetadata song, {
+    int? generation,
+  }) async {
     if (song.sourceType == .local && song.path != null) {
       return await convertToRealPathIfNeed(song.path!) ?? song.path;
     }
@@ -787,16 +949,61 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       return song.cachePath;
     }
 
-    try {
-      await library.tryAddCache(song);
-    } catch (error) {
-      logger.output("usb exclusive cache failed:$error");
+    // 云端歌曲未缓存：后台下载缓存，短暂等到够起播的水位就用 .part
+    // 文件流式独占；等不到则回退共享流式立即出声，不阻塞整首下载
+    unawaited(
+      library.tryAddCache(song).catchError((Object error) {
+        logger.output("usb exclusive cache failed:$error");
+      }),
+    );
+
+    // 能边下边播（流式独占）的格式：无损/DSD + 系统可流式解码的常见有损容器。
+    // wv/ape 等系统无解码器的不在此列，未缓存时先走共享出声，缓存完成后再走独占。
+    // 与原生 UsbExclusiveAudioEngine.streamableLossyExts 保持一致。
+    const streamableExts = {
+      'flac', 'wav', 'wave', 'dsf', 'dff',
+      'mp3', 'm4a', 'm4b', 'mp4', 'aac', 'ogg', 'oga', 'opus',
+    };
+    final ext = (song.cachePath ?? '').toLowerCase().split('.').last;
+    if (!streamableExts.contains(ext)) {
+      // 独占无法流式的格式，没必要等水位
       return null;
     }
 
-    if (song.cacheExist && song.cachePath != null) {
-      return song.cachePath;
+    final partPath = '${song.cachePath!}.part';
+    // 起播水位：约 10 秒的数据量（码率未知按 2 Mbps 估算）
+    final bytesPerSecond =
+        ((song.bitrate ?? 0) > 0 ? song.bitrate! : 2000) * 1000 ~/ 8;
+    final startBytes = bytesPerSecond * 10;
+    final deadline = DateTime.now().add(Duration(seconds: 4));
+    var lastSize = -1;
+    while (DateTime.now().isBefore(deadline)) {
+      if (generation != null && generation != _loadGeneration) {
+        return null;
+      }
+      if (song.cacheExist && song.cachePath != null) {
+        return song.cachePath; // 等待期间下载已完成
+      }
+      final part = File(partPath);
+      final size = part.existsSync() ? part.lengthSync() : 0;
+      // 水位够且下载速度跟得上播放（一轮 200ms 内至少推进等量数据）才起播；
+      // 必须有一次真实的增量测量，避免把上次中断的 .part 残留当成有效水位
+      if (lastSize >= 0 &&
+          size >= startBytes &&
+          size - lastSize >= bytesPerSecond ~/ 5) {
+        logger.output(
+          "usb exclusive streaming start:part=$size bytes, watermark=$startBytes",
+        );
+        debugPrint(
+          "usb exclusive streaming start:part=$size bytes, watermark=$startBytes",
+        );
+        return partPath;
+      }
+      lastSize = size;
+      await Future.delayed(Duration(milliseconds: 200));
     }
+    logger.output("usb exclusive skipped:below streaming watermark -> shared");
+    debugPrint("usb exclusive skipped:below streaming watermark -> shared");
     return null;
   }
 
@@ -815,8 +1022,9 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   }
 
   Future<void> _applyUsbOutputForSong(MyAudioMetadata song) async {
-    if (!Platform.isAndroid ||
-        !usbAudioPreferences.performanceModeNotifier.value) {
+    // 不再用独占开关门控：独占关闭时也请求系统 Preferred Mixer 无损输出（单纯用 DAC 无损）。
+    // 设备不支持无损时原生侧自然 no-op（preferredApplied=false，胶囊点显白）。
+    if (!Platform.isAndroid) {
       return;
     }
 
@@ -838,6 +1046,16 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       logger.output("usb output apply failed:$error");
       debugPrint("usb output apply failed:$error");
     }
+  }
+
+  int? _dsdPcmTargetRate(MyAudioMetadata song) {
+    return switch (song.dsdMultiple) {
+      64 => usbAudioPreferences.dsd64PcmRateNotifier.value,
+      128 => usbAudioPreferences.dsd128PcmRateNotifier.value,
+      256 => usbAudioPreferences.dsd256PcmRateNotifier.value,
+      512 => usbAudioPreferences.dsd512PcmRateNotifier.value,
+      _ => null,
+    };
   }
 
   int? _matchedSafeSampleRate(int? sourceSampleRate) {
@@ -869,6 +1087,13 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     UsbAudioStatus status,
     MyAudioMetadata song,
   ) {
+    // DSD 转 PCM 走共享输出时，按 DSD 倍率对应的偏好请求目标输出率
+    //（这是"目标输出率请求"，精确转换由解码器/系统混音器完成）
+    final dsdPcmRate = _dsdPcmTargetRate(song);
+    if (dsdPcmRate != null && _statusSupportsSampleRate(status, dsdPcmRate)) {
+      return dsdPcmRate;
+    }
+
     final fixedRate = usbAudioPreferences.preferredFixedSampleRate();
     if (fixedRate != null) {
       return fixedRate;
@@ -992,7 +1217,7 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   @override
   Future<void> stop() async {
     if (_usbExclusiveActive) {
-      await usbAudioService.stopExclusivePlayback();
+      await _stopExclusiveIntentionally();
       _usbExclusiveActive = false;
       _usbExclusivePosition = Duration.zero;
     }
@@ -1059,8 +1284,46 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   }
 
   void setVolume(double volume) {
-    double adjustedVolume = (math.log(volume * 9 + 1) / math.log(10)) * 100;
-    _player.setVolume(adjustedVolume);
+    final perceptualGain = _perceptualVolumeGain(volume);
+    _player.setVolume(perceptualGain * 100);
+    _applyUsbExclusiveVolume(perceptualGain);
+  }
+
+  // 与共享输出一致的感知音量曲线，返回 0..1 的线性幅度。
+  double _perceptualVolumeGain(double volume) {
+    return math.log(volume * 9 + 1) / math.log(10);
+  }
+
+  // 把当前音量下发给 USB 独占引擎：原始数字电平旁路（位完美直通），其余模式按感知
+  // 曲线施加数字增益。非独占时为空操作，DSD/DoP 会话由引擎侧强制旁路。
+  void _applyUsbExclusiveVolume(double perceptualGain) {
+    if (!_usbExclusiveActive) {
+      return;
+    }
+    final enabled = usbExclusiveDigitalVolumeEnabled();
+    unawaited(
+      usbAudioService.setExclusiveVolume(
+        gain: enabled ? perceptualGain : 1.0,
+        enabled: enabled,
+      ),
+    );
+  }
+
+  int _lastVolumeKeyValue = 0;
+
+  // 独占模式下安卓物理音量键：按累计方向差值增减音量，再走 setVolume 下发数字音量。
+  void _handleUsbExclusiveVolumeKey() {
+    final value = usbExclusiveVolumeKeyNotifier.value;
+    final delta = value - _lastVolumeKeyValue;
+    _lastVolumeKeyValue = value;
+    if (delta == 0 || !_usbExclusiveActive) {
+      return;
+    }
+    const step = 0.02; // 每按一次 2%
+    final next = (volumeNotifier.value + delta * step).clamp(0.0, 1.0);
+    volumeNotifier.value = next;
+    setVolume(next);
+    savePlayState();
   }
 
   void applyEqualizer() async {

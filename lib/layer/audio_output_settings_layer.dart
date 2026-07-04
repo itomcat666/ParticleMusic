@@ -270,11 +270,11 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
             _sectionTitle(_l10n.volumeSection),
             _settingsCard(
               children: [
-                _choiceTile<UsbVolumeLockMode>(
+                _choiceTile<UsbVolumeControlMode>(
                   title: _l10n.volumeControl,
-                  notifier: prefs.volumeLockModeNotifier,
-                  values: UsbVolumeLockMode.values,
-                  label: _volumeLockLabel,
+                  notifier: prefs.volumeControlModeNotifier,
+                  values: UsbVolumeControlMode.values,
+                  label: _volumeControlLabel,
                 ),
                 _choiceTile<int>(
                   title: _l10n.dsdGainCompensation,
@@ -289,6 +289,25 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                   notifier: prefs.volumeSmoothHandoffNotifier,
                 ),
               ],
+            ),
+            ValueListenableBuilder<UsbVolumeControlMode>(
+              valueListenable: prefs.volumeControlModeNotifier,
+              builder: (context, mode, _) {
+                if (mode != UsbVolumeControlMode.auto &&
+                    mode != UsbVolumeControlMode.dac) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+                  child: Text(
+                    _l10n.volumeControlDacFallbackHint,
+                    style: TextStyle(
+                      color: textColor.value.withAlpha(130),
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 18),
             _sectionTitle(_l10n.compatibility),
@@ -329,6 +348,13 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                   subtitle: _l10n.generateDiagnosticsReportDesc,
                   actionLabel: _generatingReport ? _l10n.generating : _l10n.generateReport,
                   onTap: _generatingReport ? null : _generateDiagnosticsReport,
+                ),
+                _actionTile(
+                  icon: Icons.tune_rounded,
+                  title: _l10n.importQuirkConfig,
+                  subtitle: _l10n.importQuirkConfigDesc,
+                  actionLabel: _l10n.importAction,
+                  onTap: _showImportQuirkSheet,
                 ),
               ],
             ),
@@ -807,27 +833,51 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
     return ValueListenableBuilder<MyAudioMetadata?>(
       valueListenable: currentSongNotifier,
       builder: (context, song, _) {
-        final channel = _channelCountLabel(status);
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _formatMetricRow(_l10n.sourceFile, [
-                _sourceFormatLabel(song),
-                formatSampleRate(song?.samplerate, _l10n),
-                channel,
-                _compactDepthLabel(status),
-              ]),
-              const SizedBox(height: 24),
-              _formatMetricRow(_l10n.dacEndpoint, [
-                'PCM',
-                formatOutputSampleRate(status, _l10n),
-                channel,
-                _compactDepthLabel(status),
-              ]),
-            ],
-          ),
+        return ValueListenableBuilder<UsbExclusivePlaybackState>(
+          valueListenable: usbExclusivePlaybackStateNotifier,
+          builder: (context, exclusive, _) {
+            final channel = _channelCountLabel(status);
+            // DoP 独占时端点收到的是封装 DSD 的 24-bit PCM 帧（帧率 = DSD 速率 ÷ 16），
+            // 不能按源文件的 DSD 速率 / 1-bit 展示；Native 独占时端点收到的就是
+            // 原始 1-bit DSD 流，直接按 DSD 速率展示
+            final dopActive =
+                exclusive.active &&
+                exclusive.sampleRate != null &&
+                (exclusive.format?.contains('(DoP)') ?? false);
+            final nativeActive =
+                exclusive.active &&
+                exclusive.sampleRate != null &&
+                (exclusive.format?.contains('(Native)') ?? false);
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _formatMetricRow(_l10n.sourceFile, [
+                    _sourceFormatLabel(song),
+                    formatSampleRate(song?.samplerate, _l10n),
+                    channel,
+                    song?.isDsd == true ? '1-bit' : _compactDepthLabel(status),
+                  ]),
+                  const SizedBox(height: 24),
+                  _formatMetricRow(_l10n.dacEndpoint, [
+                    nativeActive ? 'DSD' : (dopActive ? 'DoP' : 'PCM'),
+                    nativeActive
+                        ? formatSampleRate(exclusive.sampleRate, _l10n)
+                        : dopActive
+                        ? formatSampleRate(exclusive.sampleRate! ~/ 16, _l10n)
+                        : formatOutputSampleRate(status, _l10n),
+                    channel,
+                    nativeActive
+                        ? '1-bit'
+                        : dopActive
+                        ? '24-bit'
+                        : _compactDepthLabel(status),
+                  ]),
+                ],
+              ),
+            );
+          },
         );
       },
     );
@@ -850,15 +900,19 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
           children: [
             for (var index = 0; index < values.length; index++) ...[
               Expanded(
-                child: Text(
-                  values[index],
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: textColor.value.withAlpha(220),
-                    fontSize: 22,
-                    height: 1.05,
-                    fontWeight: FontWeight.w500,
+                // DSD128 / 352.8 kHz 之类的长值超出列宽时整体缩小，不省略截断
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    values[index],
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: textColor.value.withAlpha(220),
+                      fontSize: 22,
+                      height: 1.05,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
@@ -1368,6 +1422,106 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
     );
   }
 
+  void _showImportQuirkSheet() {
+    final controller = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      builder: (sheetContext) {
+        return MySheet(
+          height: MediaQuery.heightOf(sheetContext) * 0.85,
+          Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                child: Text(
+                  _l10n.importQuirkConfig,
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  _l10n.importQuirkConfigDesc,
+                  style: TextStyle(
+                    color: textColor.value.withAlpha(150),
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: textColor.value.withAlpha(12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: TextField(
+                      controller: controller,
+                      maxLines: null,
+                      expands: true,
+                      cursorColor: highlightTextColor.value,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        height: 1.4,
+                      ),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.all(12),
+                        hintText: '{"version": 1, "devices": [...]}',
+                        hintStyle: TextStyle(
+                          color: textColor.value.withAlpha(100),
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _importQuirks(sheetContext, controller.text),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: highlightTextColor.value,
+                      foregroundColor: menuColor.value,
+                    ),
+                    icon: const Icon(Icons.file_download_done_rounded, size: 18),
+                    label: Text(_l10n.importAction),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ).then((_) => controller.dispose());
+  }
+
+  Future<void> _importQuirks(BuildContext sheetContext, String json) async {
+    final error = await usbAudioService.importDacQuirks(json.trim());
+    if (error == null && sheetContext.mounted) {
+      Navigator.of(sheetContext).pop();
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          error == null
+              ? _l10n.importQuirkSuccess
+              : '${_l10n.importQuirkFailed}: $error',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _copyReport(String report) async {
     await Clipboard.setData(ClipboardData(text: report));
     if (!mounted) return;
@@ -1460,11 +1614,12 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
     };
   }
 
-  String _volumeLockLabel(UsbVolumeLockMode mode) {
+  String _volumeControlLabel(UsbVolumeControlMode mode) {
     return switch (mode) {
-      UsbVolumeLockMode.off => _l10n.usbOff,
-      UsbVolumeLockMode.dsdOnly => _l10n.volumeLockDsdOnly,
-      UsbVolumeLockMode.always => _l10n.volumeLockAlways,
+      UsbVolumeControlMode.auto => _l10n.usbAuto,
+      UsbVolumeControlMode.dac => _l10n.volumeControlDac,
+      UsbVolumeControlMode.digital => _l10n.volumeControlDigital,
+      UsbVolumeControlMode.raw => _l10n.volumeControlRaw,
     };
   }
 

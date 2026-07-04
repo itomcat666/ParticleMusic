@@ -16,6 +16,10 @@ final usbTransportTelemetryNotifier = ValueNotifier(
   UsbTransportTelemetry.inactive(),
 );
 
+/// 独占模式下安卓物理音量键的累计方向：+1 表示按了一次音量加，-1 表示音量减。
+/// 每次按键都会改变数值，监听方按前后差值增减独占音量（见 audio_handler）。
+final usbExclusiveVolumeKeyNotifier = ValueNotifier<int>(0);
+
 enum UsbAudioDeviceEventType { added, removed }
 
 class UsbAudioService {
@@ -163,6 +167,22 @@ class UsbAudioService {
     });
   }
 
+  /// 设置独占数字音量。gain 为 0..1 的线性幅度，enabled=false 时旁路（原始数字电平，
+  /// 位完美直通）。DSD/DoP 会话由引擎侧强制旁路，不受此值影响。
+  Future<void> setExclusiveVolume({
+    required double gain,
+    required bool enabled,
+  }) async {
+    if (!_isAndroid) {
+      return;
+    }
+
+    await _channel.invokeMethod<void>('setExclusiveVolume', {
+      'gainQ16': (gain.clamp(0.0, 1.0) * 65536).round(),
+      'enabled': enabled,
+    });
+  }
+
   Future<UsbExclusivePlaybackState> seekExclusivePlayback(Duration position) {
     return _invokeExclusiveState('seekExclusivePlayback', {
       'positionMs': position.inMilliseconds,
@@ -175,6 +195,26 @@ class UsbAudioService {
 
   Future<UsbExclusivePlaybackState> releaseExclusiveDevice() {
     return _invokeExclusiveState('releaseExclusiveDevice');
+  }
+
+  /// 导入 quirk 配置 JSON（写入本地 override 文件，优先级高于内置 asset）。
+  /// 返回 null 表示成功，否则为错误描述。
+  Future<String?> importDacQuirks(String json) async {
+    if (!_isAndroid) {
+      return 'Only available on Android.';
+    }
+    try {
+      final result = await _channel.invokeMapMethod<String, Object?>(
+        'importUsbDacQuirks',
+        {'json': json},
+      );
+      if (result?['ok'] == true) {
+        return null;
+      }
+      return result?['error'] as String? ?? 'Unknown error.';
+    } on PlatformException catch (error) {
+      return error.message ?? error.code;
+    }
   }
 
   /// 生成一键复制/导出的 DAC 适配诊断报告（纯文本 Markdown）。
@@ -258,6 +298,15 @@ class UsbAudioService {
         (call.arguments as Map?)?.cast<String, Object?>() ?? const {},
       );
       usbExclusivePlaybackStateNotifier.value = state;
+      return null;
+    }
+
+    if (call.method == 'onUsbExclusiveVolumeKey') {
+      final direction =
+          _asInt((call.arguments as Map?)?['direction'] as Object?) ?? 0;
+      if (direction != 0) {
+        usbExclusiveVolumeKeyNotifier.value += direction;
+      }
       return null;
     }
 
@@ -348,8 +397,18 @@ class UsbExclusivePlaybackRequest {
   final String? sourceFormat;
   final int? sampleRate;
   final int? bitDepth;
+
+  /// DSD 文件的输出模式（UsbDsdMode.name：dop/native），非 DSD 为 null
+  final String? dsdMode;
   final int? targetBufferMs;
   final bool startPaused;
+
+  /// filePath 是仍在下载增长中的 .part 缓存文件（流式独占）
+  final bool streaming;
+
+  /// 流式独占用的完整文件字节数估算（时长×码率，偏大）；引擎据此让
+  /// MediaExtractor 能对增长中的 .part 正确 seek，0/null 表示未知（回退旧行为）
+  final int? totalBytes;
 
   const UsbExclusivePlaybackRequest({
     required this.filePath,
@@ -357,8 +416,11 @@ class UsbExclusivePlaybackRequest {
     required this.sourceFormat,
     required this.sampleRate,
     required this.bitDepth,
+    this.dsdMode,
     required this.targetBufferMs,
     required this.startPaused,
+    this.streaming = false,
+    this.totalBytes,
   });
 
   Map<String, Object?> toMap() {
@@ -368,8 +430,11 @@ class UsbExclusivePlaybackRequest {
       'sourceFormat': sourceFormat,
       'sampleRate': sampleRate,
       'bitDepth': bitDepth,
+      'dsdMode': dsdMode,
       'targetBufferMs': targetBufferMs,
       'startPaused': startPaused,
+      'streaming': streaming,
+      'totalBytes': totalBytes,
     };
   }
 }
@@ -778,6 +843,13 @@ String buildUsbDiagnosticsReport(
   _writeListSection(buffer, diagnostics['outputCandidates']);
   buffer.writeln('- UAC2 clock source id: ${diagnostics['clockSourceId'] ?? 'unknown'}');
   buffer.writeln('- Last probe: ${native['lastProbe'] ?? 'none'}');
+  buffer.writeln('### Quirk');
+  buffer.writeln('- Match: ${diagnostics['quirkMatch'] ?? 'unknown'}');
+  buffer.writeln('- Effective: ${diagnostics['quirkEffective'] ?? 'unknown'}');
+  final quirkErrors = diagnostics['quirkLoadErrors'];
+  if (quirkErrors is String && quirkErrors.isNotEmpty) {
+    buffer.writeln('- Load errors: $quirkErrors');
+  }
 
   // 5. System-side capability
   buffer.writeln();

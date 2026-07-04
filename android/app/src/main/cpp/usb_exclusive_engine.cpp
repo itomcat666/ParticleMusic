@@ -222,6 +222,32 @@ void discardPendingLocked() {
     }
 }
 
+// seek/暂停时丢弃在途输出 URB：DISCARDURB 后仍要通过 REAPURB 收回并释放；
+// 反馈 URB 不丢（收回后 reapOneLocked 会自动重挂）。
+std::string flushOutputLocked() {
+    if (g_fd < 0) {
+        return {};
+    }
+    for (const auto& pending : g_pending_urbs) {
+        if (!pending.feedback) {
+            ioctl(g_fd, USBDEVFS_DISCARDURB, pending.urb);
+        }
+    }
+    const auto has_output = [] {
+        for (const auto& pending : g_pending_urbs) {
+            if (!pending.feedback) {
+                return true;
+            }
+        }
+        return false;
+    };
+    std::string error;
+    while (error.empty() && has_output()) {
+        error = reapOneLocked(true);
+    }
+    return error;
+}
+
 void freeAllPendingLocked() {
     for (auto& pending : g_pending_urbs) {
         freePendingUrb(pending);
@@ -686,6 +712,16 @@ Java_com_afalphy_sylvakru_UsbExclusiveNative_setMaxPendingOutputUrbs(
         kTag,
         "max pending output URBs set to %d",
         g_max_pending_urbs);
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_afalphy_sylvakru_UsbExclusiveNative_flushOutput(JNIEnv* env, jobject) {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    const std::string error = flushOutputLocked();
+    if (error.empty()) {
+        return nullptr;
+    }
+    return env->NewStringUTF(error.c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL

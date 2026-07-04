@@ -79,6 +79,15 @@ class Loader {
   }
 
   static Future<void> sync(int syncBitMask) async {
+    // 分区存储下 .dsf/.dff 等无 MIME 注册的文件对仅持 READ_MEDIA_AUDIO
+    // 的应用不可见（目录遍历都列不出来），扫描本地文件夹前请求所有文件
+    // 访问权限；拒绝则维持现状（只能扫到常见音频格式）
+    if (Platform.isAndroid &&
+        (syncBitMask & 1) == 1 &&
+        library.localFolderList.isNotEmpty) {
+      await Permission.manageExternalStorage.request();
+    }
+
     _syncing = true;
     syncStateNotifier.value++;
 

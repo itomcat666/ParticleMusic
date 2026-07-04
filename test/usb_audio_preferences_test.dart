@@ -13,7 +13,7 @@ void main() {
       'usbDsdMode': 'native',
       'usbDsd64PcmRate': 176400,
       'usbPerformanceMode': false,
-      'usbVolumeLockMode': 'always',
+      'usbVolumeControlMode': 'digital',
       'usbDsdGainCompensation': -6,
       'usbBusSpeedMode': 'high',
       'usbBitDepthMode': 'pcm32',
@@ -34,8 +34,8 @@ void main() {
     expect(usbAudioPreferences.dsd64PcmRateNotifier.value, 176400);
     expect(usbAudioPreferences.performanceModeNotifier.value, isFalse);
     expect(
-      usbAudioPreferences.volumeLockModeNotifier.value,
-      UsbVolumeLockMode.always,
+      usbAudioPreferences.volumeControlModeNotifier.value,
+      UsbVolumeControlMode.digital,
     );
     expect(usbAudioPreferences.dsdGainCompensationNotifier.value, -6);
     expect(
@@ -73,6 +73,10 @@ void main() {
     expect(usbAudioPreferences.backgroundBufferMsNotifier.value, 1500);
     expect(usbAudioPreferences.volumeSmoothHandoffNotifier.value, isTrue);
     expect(usbAudioPreferences.delayedUsbLinkNotifier.value, isFalse);
+    expect(
+      usbAudioPreferences.volumeControlModeNotifier.value,
+      UsbVolumeControlMode.auto,
+    );
   });
 
   test('selects exclusive target buffer for foreground and background', () {

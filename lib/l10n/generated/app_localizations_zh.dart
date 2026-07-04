@@ -736,6 +736,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get volumeControl => '音量控制';
 
   @override
+  String get volumeControlDac => 'DAC 硬件音量';
+
+  @override
+  String get volumeControlDigital => '数字音量';
+
+  @override
+  String get volumeControlRaw => '原始数字电平';
+
+  @override
+  String get volumeControlDacFallbackHint => 'DAC 硬件音量暂未适配，当前回退为数字音量。';
+
+  @override
   String get dsdGainCompensation => 'DSD 增益补偿';
 
   @override
@@ -785,6 +797,21 @@ class AppLocalizationsZh extends AppLocalizations {
       '汇总设备描述符、解析结果与最近日志，一键复制或导出发给开发者排查 DAC 兼容问题。';
 
   @override
+  String get importQuirkConfig => '导入 quirk 配置';
+
+  @override
+  String get importQuirkConfigDesc => '粘贴开发者提供的设备适配 JSON，导入后重新连接设备生效';
+
+  @override
+  String get importAction => '导入';
+
+  @override
+  String get importQuirkSuccess => 'quirk 配置已导入，重新连接设备后生效';
+
+  @override
+  String get importQuirkFailed => '导入失败';
+
+  @override
   String get generating => '生成中';
 
   @override
@@ -825,19 +852,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dsdOutputStrategy => 'DSD 输出策略';
 
   @override
-  String get dsdToPcm => '将 DSD 转换为 PCM 输出';
+  String get dsdToPcm => '由解码器转为 PCM，走系统输出（兼容性最好）';
 
   @override
   String get dsdToPcmDesc => '以 PCM 帧封装 DSD，设备支持时使用';
 
   @override
-  String get dsdNativeDesc => '保留 Native DSD 策略，需要底层链路支持';
-
-  @override
-  String get volumeLockDsdOnly => '只锁 DSD 音量';
-
-  @override
-  String get volumeLockAlways => '始终锁定';
+  String get dsdNativeDesc => '设备声明 RAW_DATA 或 quirk 指定字节排列时直发 DSD，否则自动回退 DoP';
 
   @override
   String get sourceFile => '源文件';
@@ -961,6 +982,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get notEnabled => '未启用';
+
+  @override
+  String get bitPerfectDirect => '位完美直通';
+
+  @override
+  String get bitPerfectVolume => '数字音量';
 
   @override
   String get noUsbDacInfo => '未检测到 USB DAC。当前显示 Android 系统输出信息。';
