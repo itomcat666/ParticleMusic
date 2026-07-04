@@ -736,6 +736,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get volumeControl => '音量控制';
 
   @override
+  String get volumeControlDac => 'DAC 硬件音量';
+
+  @override
+  String get volumeControlDigital => '数字音量';
+
+  @override
+  String get volumeControlRaw => '原始数字电平';
+
+  @override
+  String get volumeControlDacFallbackHint => 'DAC 硬件音量暂未适配，当前回退为数字音量。';
+
+  @override
   String get dsdGainCompensation => 'DSD 增益补偿';
 
   @override
@@ -847,12 +859,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dsdNativeDesc => '设备声明 RAW_DATA 或 quirk 指定字节排列时直发 DSD，否则自动回退 DoP';
-
-  @override
-  String get volumeLockDsdOnly => '只锁 DSD 音量';
-
-  @override
-  String get volumeLockAlways => '始终锁定';
 
   @override
   String get sourceFile => '源文件';

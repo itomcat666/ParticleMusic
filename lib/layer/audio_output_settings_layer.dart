@@ -270,11 +270,11 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
             _sectionTitle(_l10n.volumeSection),
             _settingsCard(
               children: [
-                _choiceTile<UsbVolumeLockMode>(
+                _choiceTile<UsbVolumeControlMode>(
                   title: _l10n.volumeControl,
-                  notifier: prefs.volumeLockModeNotifier,
-                  values: UsbVolumeLockMode.values,
-                  label: _volumeLockLabel,
+                  notifier: prefs.volumeControlModeNotifier,
+                  values: UsbVolumeControlMode.values,
+                  label: _volumeControlLabel,
                 ),
                 _choiceTile<int>(
                   title: _l10n.dsdGainCompensation,
@@ -289,6 +289,25 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
                   notifier: prefs.volumeSmoothHandoffNotifier,
                 ),
               ],
+            ),
+            ValueListenableBuilder<UsbVolumeControlMode>(
+              valueListenable: prefs.volumeControlModeNotifier,
+              builder: (context, mode, _) {
+                if (mode != UsbVolumeControlMode.auto &&
+                    mode != UsbVolumeControlMode.dac) {
+                  return const SizedBox.shrink();
+                }
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 8, 6, 0),
+                  child: Text(
+                    _l10n.volumeControlDacFallbackHint,
+                    style: TextStyle(
+                      color: textColor.value.withAlpha(130),
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 18),
             _sectionTitle(_l10n.compatibility),
@@ -1595,11 +1614,12 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
     };
   }
 
-  String _volumeLockLabel(UsbVolumeLockMode mode) {
+  String _volumeControlLabel(UsbVolumeControlMode mode) {
     return switch (mode) {
-      UsbVolumeLockMode.off => _l10n.usbOff,
-      UsbVolumeLockMode.dsdOnly => _l10n.volumeLockDsdOnly,
-      UsbVolumeLockMode.always => _l10n.volumeLockAlways,
+      UsbVolumeControlMode.auto => _l10n.usbAuto,
+      UsbVolumeControlMode.dac => _l10n.volumeControlDac,
+      UsbVolumeControlMode.digital => _l10n.volumeControlDigital,
+      UsbVolumeControlMode.raw => _l10n.volumeControlRaw,
     };
   }
 

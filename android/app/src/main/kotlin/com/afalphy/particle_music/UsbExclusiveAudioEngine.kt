@@ -63,6 +63,9 @@ private const val NATIVE_USB_EXCLUSIVE_DISABLED_MESSAGE =
 private const val USB_RECIP_INTERFACE = 0x01
 private const val USB_RECIP_ENDPOINT = 0x02
 
+// 数字音量线性增益的 Q16.16 定点满刻度（1.0），低于此值即衰减，等于此值为位完美直通。
+private const val UNITY_GAIN_Q16 = 65536
+
 class UsbExclusiveAudioEngine(
     private val context: Context,
     private val emitState: (Map<String, Any?>) -> Unit,
@@ -107,6 +110,10 @@ class UsbExclusiveAudioEngine(
     @Volatile private var workerEndedAtEof = false
     private val idleFillerRunning = AtomicBoolean(false)
     private var idleFillerThread: Thread? = null
+    // 数字音量：PCM 打包器逐样本读取此增益（Q16.16）。enabled=false（原始数字电平）时
+    // 恒为满刻度直通；DSD/DoP 打包器不读此值，始终位完美。
+    @Volatile private var pcmVolumeGainQ16 = UNITY_GAIN_Q16
+    @Volatile private var volumeControlEnabled = false
 
     fun capabilities(usbManager: UsbManager, device: UsbDevice?): Map<String, Any?> {
         if (!NATIVE_USB_EXCLUSIVE_STREAMING_ENABLED) {
@@ -544,6 +551,18 @@ class UsbExclusiveAudioEngine(
             ),
         )
     }
+
+    // 设置独占数字音量。enabled=false（原始数字电平）时旁路为满刻度直通；否则按传入
+    // 的 Q16.16 线性增益衰减 PCM。DSD/DoP 会话不受影响。切歌不复位，音量在会话内保持。
+    fun setVolume(gainQ16: Int, enabled: Boolean) {
+        volumeControlEnabled = enabled
+        pcmVolumeGainQ16 = if (enabled) gainQ16.coerceIn(0, UNITY_GAIN_Q16) else UNITY_GAIN_Q16
+        UsbDiagnostics.i(tag, "set exclusive volume gainQ16=$pcmVolumeGainQ16, enabled=$enabled")
+    }
+
+    // 是否应由本软件接管安卓物理音量键：独占播放中且非原始数字电平模式。
+    fun isVolumeControlEngaged(): Boolean =
+        currentState["active"] == true && volumeControlEnabled
 
     fun setTargetBufferMs(value: Int): Map<String, Any?> {
         targetBufferMs = value.coerceIn(50, 5000)
@@ -1101,8 +1120,13 @@ class UsbExclusiveAudioEngine(
                     activePacketsPerSecond = target.packetsPerSecond
                     applyNativeTargetBuffer(target.packetsPerSecond)
                 }
-                ?: createPacketizer(frameRate, reader.channels, frameBitDepth, target)
-                    .also { sessionPacketizer = it }
+                ?: createPacketizer(
+                    frameRate,
+                    reader.channels,
+                    frameBitDepth,
+                    target,
+                    applyDigitalVolume = false,
+                ).also { sessionPacketizer = it }
             updateState(
                 currentState + mapOf(
                     "active" to true,
@@ -1395,6 +1419,7 @@ class UsbExclusiveAudioEngine(
         channels: Int,
         bitDepth: Int,
         target: OutputTarget,
+        applyDigitalVolume: Boolean = true,
     ): PcmIsoPacketizer {
         val inputBytesPerSample = bytesPerSampleForBitDepth(bitDepth)
         val usbBytesPerSample = target.usbBytesPerSample
@@ -1442,6 +1467,11 @@ class UsbExclusiveAudioEngine(
             feedbackOutputPacketDivisor,
             feedbackFramesPerPacketQ16 = target.feedbackEndpoint?.let {
                 { UsbExclusiveNative.feedbackFramesPerPacketQ16() }
+            },
+            volumeGainQ16 = if (applyDigitalVolume) {
+                { pcmVolumeGainQ16 }
+            } else {
+                null
             },
         ) { data, packetLengths, packetCount ->
             val error = UsbExclusiveNative.writeIsoPackets(data, packetLengths, packetCount)
@@ -2223,6 +2253,7 @@ class UsbExclusiveAudioEngine(
         private val usbBitResolution: Int,
         private val feedbackOutputPacketDivisor: Int,
         private val feedbackFramesPerPacketQ16: (() -> Int)? = null,
+        private val volumeGainQ16: (() -> Int)? = null,
         private val writePackets: (ByteArray, IntArray, Int) -> Unit,
     ) {
         private val pending = ByteArrayOutputStream()
@@ -2354,7 +2385,10 @@ class UsbExclusiveAudioEngine(
             String.format(Locale.US, "%.6f", value.toDouble() / 65536.0)
 
         private fun convertPcmToUsbSlots(data: ByteArray): ByteArray {
-            if (inputBytesPerSample == usbBytesPerSample && inputBitDepth == usbBitResolution) {
+            val gainQ16 = volumeGainQ16?.invoke() ?: UNITY_GAIN_Q16
+            val applyGain = gainQ16 < UNITY_GAIN_Q16
+            // 满刻度且无需重排位深时零拷贝直通，保持位完美。
+            if (!applyGain && inputBytesPerSample == usbBytesPerSample && inputBitDepth == usbBitResolution) {
                 return data
             }
 
@@ -2364,7 +2398,11 @@ class UsbExclusiveAudioEngine(
             var outputOffset = 0
             repeat(frames) {
                 repeat(inputBytesPerFrame / inputBytesPerSample) {
-                    val sample = readSignedLittleEndian(data, inputOffset, inputBytesPerSample, inputBitDepth)
+                    var sample = readSignedLittleEndian(data, inputOffset, inputBytesPerSample, inputBitDepth)
+                    if (applyGain) {
+                        // 在源位深域施加线性增益（Long 防溢出）再做 slot 对齐移位。
+                        sample = ((sample.toLong() * gainQ16) shr 16).toInt()
+                    }
                     val shifted = if (usbBitResolution >= inputBitDepth) {
                         sample shl (usbBitResolution - inputBitDepth)
                     } else {

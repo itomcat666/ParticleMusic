@@ -18,9 +18,18 @@ int? preferredUsbExclusiveBitDepth() {
   };
 }
 
+/// 独占数字音量是否生效：除“原始数字电平”外都启用。
+/// DAC 硬件音量与自动尚未接入 UAC Feature Unit，暂按数字音量处理。
+bool usbExclusiveDigitalVolumeEnabled() {
+  return usbAudioPreferences.volumeControlModeNotifier.value !=
+      UsbVolumeControlMode.raw;
+}
+
 enum UsbDsdMode { pcm, dop, native }
 
-enum UsbVolumeLockMode { off, dsdOnly, always }
+/// 独占音量控制方式：自动/DAC 硬件音量/数字音量/原始数字电平。
+/// DAC 硬件音量与自动暂未接入 UAC Feature Unit，当前回退为数字音量处理。
+enum UsbVolumeControlMode { auto, dac, digital, raw }
 
 enum UsbBusSpeedMode { auto, full, high, superSpeed }
 
@@ -37,7 +46,7 @@ class UsbAudioPreferences {
   final dsd256PcmRateNotifier = ValueNotifier(88200);
   final dsd512PcmRateNotifier = ValueNotifier(88200);
   final performanceModeNotifier = ValueNotifier(true);
-  final volumeLockModeNotifier = ValueNotifier(UsbVolumeLockMode.dsdOnly);
+  final volumeControlModeNotifier = ValueNotifier(UsbVolumeControlMode.auto);
   final dsdGainCompensationNotifier = ValueNotifier(0);
   final busSpeedModeNotifier = ValueNotifier(UsbBusSpeedMode.auto);
   final bitDepthModeNotifier = ValueNotifier(UsbBitDepthMode.auto);
@@ -72,10 +81,10 @@ class UsbAudioPreferences {
     dsd512PcmRateNotifier.value =
         _validRate(json['usbDsd512PcmRate'] as int?) ?? 88200;
     performanceModeNotifier.value = json['usbPerformanceMode'] as bool? ?? true;
-    volumeLockModeNotifier.value = _enumByName(
-      UsbVolumeLockMode.values,
-      json['usbVolumeLockMode'] as String?,
-      UsbVolumeLockMode.dsdOnly,
+    volumeControlModeNotifier.value = _enumByName(
+      UsbVolumeControlMode.values,
+      json['usbVolumeControlMode'] as String?,
+      UsbVolumeControlMode.auto,
     );
     dsdGainCompensationNotifier.value =
         json['usbDsdGainCompensation'] as int? ?? 0;
@@ -121,7 +130,7 @@ class UsbAudioPreferences {
       'usbDsd256PcmRate': dsd256PcmRateNotifier.value,
       'usbDsd512PcmRate': dsd512PcmRateNotifier.value,
       'usbPerformanceMode': performanceModeNotifier.value,
-      'usbVolumeLockMode': volumeLockModeNotifier.value.name,
+      'usbVolumeControlMode': volumeControlModeNotifier.value.name,
       'usbDsdGainCompensation': dsdGainCompensationNotifier.value,
       'usbBusSpeedMode': busSpeedModeNotifier.value.name,
       'usbBitDepthMode': bitDepthModeNotifier.value.name,

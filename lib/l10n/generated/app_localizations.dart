@@ -1520,6 +1520,30 @@ abstract class AppLocalizations {
   /// **'Volume control'**
   String get volumeControl;
 
+  /// No description provided for @volumeControlDac.
+  ///
+  /// In en, this message translates to:
+  /// **'DAC hardware volume'**
+  String get volumeControlDac;
+
+  /// No description provided for @volumeControlDigital.
+  ///
+  /// In en, this message translates to:
+  /// **'Digital volume'**
+  String get volumeControlDigital;
+
+  /// No description provided for @volumeControlRaw.
+  ///
+  /// In en, this message translates to:
+  /// **'Raw digital level'**
+  String get volumeControlRaw;
+
+  /// No description provided for @volumeControlDacFallbackHint.
+  ///
+  /// In en, this message translates to:
+  /// **'DAC hardware volume isn\'t available yet; it currently falls back to digital volume.'**
+  String get volumeControlDacFallbackHint;
+
   /// No description provided for @dsdGainCompensation.
   ///
   /// In en, this message translates to:
@@ -1735,18 +1759,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Sends raw DSD when the device declares RAW_DATA or a quirk sets the layout; falls back to DoP otherwise'**
   String get dsdNativeDesc;
-
-  /// No description provided for @volumeLockDsdOnly.
-  ///
-  /// In en, this message translates to:
-  /// **'Lock DSD volume only'**
-  String get volumeLockDsdOnly;
-
-  /// No description provided for @volumeLockAlways.
-  ///
-  /// In en, this message translates to:
-  /// **'Always lock'**
-  String get volumeLockAlways;
 
   /// No description provided for @sourceFile.
   ///

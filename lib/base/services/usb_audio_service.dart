@@ -16,6 +16,10 @@ final usbTransportTelemetryNotifier = ValueNotifier(
   UsbTransportTelemetry.inactive(),
 );
 
+/// 独占模式下安卓物理音量键的累计方向：+1 表示按了一次音量加，-1 表示音量减。
+/// 每次按键都会改变数值，监听方按前后差值增减独占音量（见 audio_handler）。
+final usbExclusiveVolumeKeyNotifier = ValueNotifier<int>(0);
+
 enum UsbAudioDeviceEventType { added, removed }
 
 class UsbAudioService {
@@ -163,6 +167,22 @@ class UsbAudioService {
     });
   }
 
+  /// 设置独占数字音量。gain 为 0..1 的线性幅度，enabled=false 时旁路（原始数字电平，
+  /// 位完美直通）。DSD/DoP 会话由引擎侧强制旁路，不受此值影响。
+  Future<void> setExclusiveVolume({
+    required double gain,
+    required bool enabled,
+  }) async {
+    if (!_isAndroid) {
+      return;
+    }
+
+    await _channel.invokeMethod<void>('setExclusiveVolume', {
+      'gainQ16': (gain.clamp(0.0, 1.0) * 65536).round(),
+      'enabled': enabled,
+    });
+  }
+
   Future<UsbExclusivePlaybackState> seekExclusivePlayback(Duration position) {
     return _invokeExclusiveState('seekExclusivePlayback', {
       'positionMs': position.inMilliseconds,
@@ -278,6 +298,15 @@ class UsbAudioService {
         (call.arguments as Map?)?.cast<String, Object?>() ?? const {},
       );
       usbExclusivePlaybackStateNotifier.value = state;
+      return null;
+    }
+
+    if (call.method == 'onUsbExclusiveVolumeKey') {
+      final direction =
+          _asInt((call.arguments as Map?)?['direction'] as Object?) ?? 0;
+      if (direction != 0) {
+        usbExclusiveVolumeKeyNotifier.value += direction;
+      }
       return null;
     }
 

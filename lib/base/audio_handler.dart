@@ -167,6 +167,11 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     });
 
     usbExclusivePlaybackStateNotifier.addListener(_handleUsbExclusiveState);
+    usbExclusiveVolumeKeyNotifier.addListener(_handleUsbExclusiveVolumeKey);
+    // 切换音量控制方式后立即按新方式重下发（原始数字电平旁路、其余数字音量）。
+    usbAudioPreferences.volumeControlModeNotifier.addListener(() {
+      _applyUsbExclusiveVolume(_perceptualVolumeGain(volumeNotifier.value));
+    });
     if (Platform.isAndroid) {
       WidgetsBinding.instance.addObserver(this);
     }
@@ -210,6 +215,10 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
     _usbExclusiveActive = state.active;
 
     if (state.active) {
+      // 刚进入独占时把当前音量按当前控制方式下发一次，避免独占起播后音量失控。
+      if (!wasActive) {
+        _applyUsbExclusiveVolume(_perceptualVolumeGain(volumeNotifier.value));
+      }
       // 独占播放时，位置由独占链路上报，驱动进度流。
       _positionController.add(state.position);
       if (isPlayingNotifier.value != state.playing) {
@@ -1224,8 +1233,46 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   }
 
   void setVolume(double volume) {
-    double adjustedVolume = (math.log(volume * 9 + 1) / math.log(10)) * 100;
-    _player.setVolume(adjustedVolume);
+    final perceptualGain = _perceptualVolumeGain(volume);
+    _player.setVolume(perceptualGain * 100);
+    _applyUsbExclusiveVolume(perceptualGain);
+  }
+
+  // 与共享输出一致的感知音量曲线，返回 0..1 的线性幅度。
+  double _perceptualVolumeGain(double volume) {
+    return math.log(volume * 9 + 1) / math.log(10);
+  }
+
+  // 把当前音量下发给 USB 独占引擎：原始数字电平旁路（位完美直通），其余模式按感知
+  // 曲线施加数字增益。非独占时为空操作，DSD/DoP 会话由引擎侧强制旁路。
+  void _applyUsbExclusiveVolume(double perceptualGain) {
+    if (!_usbExclusiveActive) {
+      return;
+    }
+    final enabled = usbExclusiveDigitalVolumeEnabled();
+    unawaited(
+      usbAudioService.setExclusiveVolume(
+        gain: enabled ? perceptualGain : 1.0,
+        enabled: enabled,
+      ),
+    );
+  }
+
+  int _lastVolumeKeyValue = 0;
+
+  // 独占模式下安卓物理音量键：按累计方向差值增减音量，再走 setVolume 下发数字音量。
+  void _handleUsbExclusiveVolumeKey() {
+    final value = usbExclusiveVolumeKeyNotifier.value;
+    final delta = value - _lastVolumeKeyValue;
+    _lastVolumeKeyValue = value;
+    if (delta == 0 || !_usbExclusiveActive) {
+      return;
+    }
+    const step = 0.05; // 每按一次约 5%
+    final next = (volumeNotifier.value + delta * step).clamp(0.0, 1.0);
+    volumeNotifier.value = next;
+    setVolume(next);
+    savePlayState();
   }
 
   void applyEqualizer() async {

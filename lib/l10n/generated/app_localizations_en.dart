@@ -751,6 +751,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get volumeControl => 'Volume control';
 
   @override
+  String get volumeControlDac => 'DAC hardware volume';
+
+  @override
+  String get volumeControlDigital => 'Digital volume';
+
+  @override
+  String get volumeControlRaw => 'Raw digital level';
+
+  @override
+  String get volumeControlDacFallbackHint =>
+      'DAC hardware volume isn\'t available yet; it currently falls back to digital volume.';
+
+  @override
   String get dsdGainCompensation => 'DSD gain compensation';
 
   @override
@@ -871,12 +884,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get dsdNativeDesc =>
       'Sends raw DSD when the device declares RAW_DATA or a quirk sets the layout; falls back to DoP otherwise';
-
-  @override
-  String get volumeLockDsdOnly => 'Lock DSD volume only';
-
-  @override
-  String get volumeLockAlways => 'Always lock';
 
   @override
   String get sourceFile => 'Source';
