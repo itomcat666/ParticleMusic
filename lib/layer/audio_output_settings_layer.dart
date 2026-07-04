@@ -759,11 +759,12 @@ class _AudioOutputSettingsLayerState extends State<AudioOutputSettingsLayer> {
   }
 
   Widget _settingsCard({required List<Widget> children}) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: menuColor.value,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    // 用同色同圆角的 Material 承载，让内部 ListTile 的水波纹画在卡片本身上，
+    // 避免带色 DecoratedBox 盖住 ink 触发框架断言。
+    return Material(
+      color: menuColor.value,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           for (var index = 0; index < children.length; index++) ...[
