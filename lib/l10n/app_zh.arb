@@ -315,6 +315,8 @@
   "encoding": "编码",
   "requested": "已请求",
   "notEnabled": "未启用",
+  "bitPerfectDirect": "位完美直通",
+  "bitPerfectVolume": "数字音量",
   "noUsbDacInfo": "未检测到 USB DAC。当前显示 Android 系统输出信息。",
   "pcmSystemDefault": "PCM / 系统默认",
   "needAndroid14": "需要 Android 14+",

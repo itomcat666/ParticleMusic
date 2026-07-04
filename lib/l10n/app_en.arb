@@ -394,6 +394,8 @@
   "encoding": "Encoding",
   "requested": "Requested",
   "notEnabled": "Not enabled",
+  "bitPerfectDirect": "Bit-perfect (direct)",
+  "bitPerfectVolume": "Digital volume",
   "noUsbDacInfo": "No USB DAC detected. Showing Android system output.",
   "pcmSystemDefault": "PCM / system default",
   "needAndroid14": "Requires Android 14+",

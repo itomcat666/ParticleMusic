@@ -1988,6 +1988,18 @@ abstract class AppLocalizations {
   /// **'Not enabled'**
   String get notEnabled;
 
+  /// No description provided for @bitPerfectDirect.
+  ///
+  /// In en, this message translates to:
+  /// **'Bit-perfect (direct)'**
+  String get bitPerfectDirect;
+
+  /// No description provided for @bitPerfectVolume.
+  ///
+  /// In en, this message translates to:
+  /// **'Digital volume'**
+  String get bitPerfectVolume;
+
   /// No description provided for @noUsbDacInfo.
   ///
   /// In en, this message translates to:

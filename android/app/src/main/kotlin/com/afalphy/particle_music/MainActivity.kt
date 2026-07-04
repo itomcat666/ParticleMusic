@@ -705,6 +705,38 @@ class MainActivity : AudioServiceActivity() {
         val bitPerfect = call.argument<Boolean>("bitPerfect") ?: true
 
         return try {
+            // bit-perfect 必须使用设备声明支持的 mixer attributes（采样率/位深由设备决定）。
+            // 自行拼的 format（如 16bit）不在设备 bit-perfect 支持列表时会被拒绝，导致系统无损无法生效。
+            // 优先匹配请求采样率，否则取设备支持的最高采样率的 bit-perfect 项。
+            if (bitPerfect) {
+                val supported = audioManager.getSupportedMixerAttributes(device)
+                    .filter { it.mixerBehavior == AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT }
+                val chosen = supported.firstOrNull { it.format.sampleRate == sampleRate }
+                    ?: supported.maxByOrNull { it.format.sampleRate }
+                if (chosen != null) {
+                    UsbDiagnostics.i(
+                        tag,
+                        "applyPreferredOutputApi34 bit-perfect: sampleRate=${chosen.format.sampleRate}, encoding=${chosen.format.encoding}.",
+                    )
+                    val applied = audioManager.setPreferredMixerAttributes(
+                        mediaAudioAttributes(),
+                        device,
+                        chosen,
+                    )
+                    return getStatus(
+                        preferredApplied = applied,
+                        message = if (applied) {
+                            "Applied bit-perfect USB mixer attributes."
+                        } else {
+                            "Device rejected bit-perfect USB mixer attributes."
+                        },
+                    )
+                }
+                UsbDiagnostics.i(
+                    tag,
+                    "applyPreferredOutputApi34: device has no bit-perfect mixer attributes, using default behavior.",
+                )
+            }
             UsbDiagnostics.i(tag, "applyPreferredOutputApi34: requesting sampleRate=$sampleRate, encoding=$encoding.")
             val format = AudioFormat.Builder()
                 .setSampleRate(sampleRate)
@@ -712,13 +744,7 @@ class MainActivity : AudioServiceActivity() {
                 .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                 .build()
             val mixerAttributes = AudioMixerAttributes.Builder(format)
-                .setMixerBehavior(
-                    if (bitPerfect) {
-                        AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT
-                    } else {
-                        AudioMixerAttributes.MIXER_BEHAVIOR_DEFAULT
-                    },
-                )
+                .setMixerBehavior(AudioMixerAttributes.MIXER_BEHAVIOR_DEFAULT)
                 .build()
             val applied = audioManager.setPreferredMixerAttributes(
                 mediaAudioAttributes(),

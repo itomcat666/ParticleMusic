@@ -95,6 +95,8 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   Duration _playedDuration = Duration.zero;
   Duration _usbExclusivePosition = Duration.zero;
   bool _usbExclusiveActive = false;
+  // 主动停止独占（切歌/停止播放）时置真，避免独占状态监听把主动停当成意外中断而误触发回退续播
+  bool _intentionalExclusiveStop = false;
   bool _suppressPlayerCompleted = false;
   final _positionController = StreamController<Duration>.broadcast();
 
@@ -250,6 +252,16 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
           await pause();
         }
       }());
+    } else if (wasActive && !_intentionalExclusiveStop) {
+      // 独占播放中途意外失活（拔出 DAC / 写失败 ENODEV 等）：回退系统输出，从中断位置续播，
+      // 不再卡住需要手动切歌才恢复。
+      logger.output(
+        "usb exclusive interrupted -> system output fallback:${state.message}",
+      );
+      debugPrint(
+        "usb exclusive interrupted -> system output fallback:${state.message}",
+      );
+      unawaited(_resumeOnSystemOutputAfterExclusiveInterrupt(state.position));
     }
   }
 
@@ -261,6 +273,78 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
       scheduleMicrotask(() {
         _suppressPlayerCompleted = false;
       });
+    }
+  }
+
+  /// 主动停止独占（切歌/停止播放）时置标志，避免独占状态监听把这次失活
+  /// 误判成意外中断而触发回退续播。
+  Future<void> _stopExclusiveIntentionally() async {
+    _intentionalExclusiveStop = true;
+    try {
+      await usbAudioService.stopExclusivePlayback();
+    } finally {
+      _intentionalExclusiveStop = false;
+    }
+  }
+
+  /// 用系统输出（media_kit）打开歌曲并按当前播放状态起播。
+  /// 供 load() 非独占分支与独占意外中断回退续播复用。
+  Future<void> _openPlayerMedia(MyAudioMetadata currentSong) async {
+    if (currentSong.cacheExist) {
+      await _player.open(
+        Media(currentSong.cachePath!),
+        play: isPlayingNotifier.value,
+      );
+      return;
+    }
+    String? resource;
+    bool needHeader = false;
+    switch (currentSong.sourceType) {
+      case .webdav:
+        final tmpPath = await convertToRealPathIfNeed(currentSong.path!);
+        if (tmpPath == null) {
+          needHeader = true;
+        } else {
+          resource = tmpPath;
+        }
+        break;
+      case .navidrome:
+        currentSong.path ??= navidromeClient!.getStreamUrl(currentSong.id);
+        break;
+      case .emby:
+        currentSong.path ??= embyClient!.audioUrl(currentSong.id);
+        break;
+      default:
+        break;
+    }
+    resource ??= currentSong.path!;
+    await _player.open(
+      Media(resource, httpHeaders: needHeader ? webdavClient?.headers : null),
+      play: isPlayingNotifier.value,
+    );
+  }
+
+  /// 独占播放中途意外中断（拔出 DAC、写失败 ENODEV 等）时回退到系统输出，
+  /// 从中断位置续播，避免卡住需要手动切歌才恢复。
+  Future<void> _resumeOnSystemOutputAfterExclusiveInterrupt(
+    Duration position,
+  ) async {
+    final currentSong = currentSongNotifier.value;
+    if (currentSong == null) {
+      return;
+    }
+    final generation = _loadGeneration;
+    try {
+      await _applyUsbOutputForSong(currentSong);
+      if (generation != _loadGeneration) return;
+      await _openPlayerMedia(currentSong);
+      if (generation != _loadGeneration) return;
+      if (position > Duration.zero) {
+        await _player.seek(position);
+      }
+    } catch (error) {
+      logger.output("usb exclusive interrupt fallback failed:$error");
+      debugPrint("usb exclusive interrupt fallback failed:$error");
     }
   }
 
@@ -636,7 +720,7 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
 
     isLoading = true;
     try {
-      await usbAudioService.stopExclusivePlayback();
+      await _stopExclusiveIntentionally();
       _usbExclusiveActive = false;
       _usbExclusivePosition = Duration.zero;
 
@@ -659,45 +743,7 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
           isLoading = false;
           return;
         }
-        if (currentSong.cacheExist) {
-          await _player.open(
-            Media(currentSong.cachePath!),
-            play: isPlayingNotifier.value,
-          );
-        } else {
-          String? resource;
-          bool needHeader = false;
-          switch (currentSong.sourceType) {
-            case .webdav:
-              final tmpPath = await convertToRealPathIfNeed(currentSong.path!);
-              if (tmpPath == null) {
-                needHeader = true;
-              } else {
-                resource = tmpPath;
-              }
-              break;
-            case .navidrome:
-              currentSong.path ??= navidromeClient!.getStreamUrl(
-                currentSong.id,
-              );
-              break;
-            case .emby:
-              currentSong.path ??= embyClient!.audioUrl(currentSong.id);
-              break;
-            default:
-              break;
-          }
-
-          resource ??= currentSong.path!;
-
-          await _player.open(
-            Media(
-              resource,
-              httpHeaders: needHeader ? webdavClient?.headers : null,
-            ),
-            play: isPlayingNotifier.value,
-          );
-        }
+        await _openPlayerMedia(currentSong);
       }
 
       if (isPlayingNotifier.value) {
@@ -976,8 +1022,9 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   }
 
   Future<void> _applyUsbOutputForSong(MyAudioMetadata song) async {
-    if (!Platform.isAndroid ||
-        !usbAudioPreferences.performanceModeNotifier.value) {
+    // 不再用独占开关门控：独占关闭时也请求系统 Preferred Mixer 无损输出（单纯用 DAC 无损）。
+    // 设备不支持无损时原生侧自然 no-op（preferredApplied=false，胶囊点显白）。
+    if (!Platform.isAndroid) {
       return;
     }
 
@@ -1170,7 +1217,7 @@ class MyAudioHandler extends BaseAudioHandler with WidgetsBindingObserver {
   @override
   Future<void> stop() async {
     if (_usbExclusiveActive) {
-      await usbAudioService.stopExclusivePlayback();
+      await _stopExclusiveIntentionally();
       _usbExclusiveActive = false;
       _usbExclusivePosition = Duration.zero;
     }

@@ -182,14 +182,23 @@ class AudioOutputChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder(
-      valueListenable: usbAudioStatusNotifier,
-      builder: (context, status, child) {
+    // 同时监听系统 USB 状态、独占播放状态与独占开关：切歌/切独占/DSD 切换时
+    // 胶囊会自动刷新，不再需要手动点一下才更新
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        usbAudioStatusNotifier,
+        usbExclusivePlaybackStateNotifier,
+        usbAudioPreferences.performanceModeNotifier,
+      ]),
+      builder: (context, child) {
         final l10n = AppLocalizations.of(context);
+        final status = usbAudioStatusNotifier.value;
+        final exclusive = usbExclusivePlaybackStateNotifier.value;
         final outputRate = formatOutputSampleRate(status, l10n);
         final outputName = _shortOutputName(status, l10n);
         final bitDepth = _bitDepthLabel(status, l10n);
         final chipColor = _chipColor(color);
+        final dotColor = _outputDotColor(status, exclusive);
 
         return Center(
           child: Material(
@@ -221,7 +230,7 @@ class AudioOutputChip extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _PulseDot(active: status.supported, color: color),
+                    _PulseDot(color: dotColor),
                     const SizedBox(width: 9),
                     Flexible(
                       child: Text(
@@ -359,7 +368,7 @@ class _UsbAudioDetectedSheetState extends State<_UsbAudioDetectedSheet> {
                   width: 44,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(45),
+                    color: foreground.withAlpha(45),
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
@@ -409,9 +418,7 @@ class _UsbAudioDetectedSheetState extends State<_UsbAudioDetectedSheet> {
               const SizedBox(height: 12),
               _SignalSection(
                 title: l10n.exclusive,
-                accent: canRequestExclusive
-                    ? const Color(0xFF50D890)
-                    : const Color(0xFFFFA33A),
+                accent: canRequestExclusive ? highlight : muted,
                 foreground: foreground,
                 muted: muted,
                 surface: surface,
@@ -533,7 +540,7 @@ class _AudioOutputSheetState extends State<_AudioOutputSheet> {
                       width: 44,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(45),
+                        color: foreground.withAlpha(45),
                         borderRadius: BorderRadius.circular(99),
                       ),
                     ),
@@ -591,24 +598,8 @@ class _AudioOutputSheetState extends State<_AudioOutputSheet> {
                   ),
                   const SizedBox(height: 12),
                   _SignalSection(
-                    title: l10n.processingChain,
-                    accent: muted,
-                    foreground: foreground,
-                    muted: muted,
-                    surface: surface,
-                    border: border,
-                    rows: [
-                      _InfoRow(l10n.equalizer, l10n.usbOff),
-                      _InfoRow('PEQ', l10n.usbOff),
-                      _InfoRow(l10n.dspPlugin, l10n.notAttached),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _SignalSection(
                     title: l10n.signalOutput,
-                    accent: status.supported
-                        ? const Color(0xFF50D890)
-                        : const Color(0xFFFFA33A),
+                    accent: status.supported ? highlight : muted,
                     foreground: foreground,
                     muted: muted,
                     surface: surface,
@@ -619,11 +610,7 @@ class _AudioOutputSheetState extends State<_AudioOutputSheet> {
                       _InfoRow(l10n.encoding, _outputEncodingLabel(status, l10n)),
                       _InfoRow(
                         'Bit-perfect',
-                        status.preferredBitPerfect
-                            ? l10n.requested
-                            : status.supported
-                            ? l10n.notEnabled
-                            : l10n.unavailable,
+                        _bitPerfectStatusLabel(status, l10n),
                       ),
                     ],
                   ),
@@ -800,10 +787,9 @@ class _OutputGlyph extends StatelessWidget {
 }
 
 class _PulseDot extends StatelessWidget {
-  final bool active;
   final Color color;
 
-  const _PulseDot({required this.active, required this.color});
+  const _PulseDot({required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -812,19 +798,52 @@ class _PulseDot extends StatelessWidget {
       height: 8,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: active ? color : color.withAlpha(120),
-        boxShadow: active
-            ? [
-                BoxShadow(
-                  color: color.withAlpha(120),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ]
-            : null,
+        color: color,
+        boxShadow: [
+          BoxShadow(
+            color: color.withAlpha(140),
+            blurRadius: 12,
+            spreadRadius: 2,
+          ),
+        ],
       ),
     );
   }
+}
+
+/// 胶囊左侧状态指示灯颜色：独占 PCM 绿、独占 DSD 蓝、开了独占却未生效(失败)红、
+/// 非独占(系统输出)白。这是状态语义灯，独立于跟随封面的主题配色。
+Color _outputDotColor(UsbAudioStatus status, UsbExclusivePlaybackState exclusive) {
+  final perfMode = usbAudioPreferences.performanceModeNotifier.value;
+  if (perfMode && exclusive.active) {
+    // DoP/Native 的 DSD 是 1-bit 流，恒位完美，走蓝
+    if (exclusive.bitDepth == 1) {
+      return const Color(0xFF3B82F6); // DSD 蓝
+    }
+    // PCM 独占：原始数字电平旁路=位完美紫，启用了数字音量=绿
+    return _exclusiveBitPerfect(exclusive)
+        ? const Color(0xFFAF52DE) // PCM 位完美 紫
+        : const Color(0xFF34C759); // PCM 绿
+  }
+  // 非独占但系统 Preferred Mixer 真正以 bit-perfect 生效：单纯用 DAC 的无损系统输出。
+  // 用 preferredBitPerfect 而非 preferredApplied——default behavior 只是普通重采样，不是无损，
+  // 不该标黄（很多 DAC supportsBitPerfectMixer=false，系统层给不了 bit-perfect，只能靠真独占）。
+  if (status.preferredBitPerfect) {
+    return const Color(0xFFFFCC00); // 黄
+  }
+  if (perfMode && status.supported) {
+    // 已开独占且连着 DAC，独占与系统无损都没生效 = 失败/回退
+    return const Color(0xFFFF3B30); // 红
+  }
+  return Colors.white; // 非独占普通输出
+}
+
+/// 独占是否真正位完美：DSD/DoP 引擎强制旁路恒位完美；PCM 只有音量方式为
+/// “原始数字电平”（旁路直通、不施加数字增益）时才位完美。
+bool _exclusiveBitPerfect(UsbExclusivePlaybackState exclusive) {
+  if (!exclusive.active) return false;
+  if (exclusive.bitDepth == 1) return true;
+  return !usbExclusiveDigitalVolumeEnabled();
 }
 
 class _InfoRow {
@@ -904,10 +923,32 @@ String _bitDepthLabel(UsbAudioStatus status, AppLocalizations l10n) {
 }
 
 String _outputEncodingLabel(UsbAudioStatus status, AppLocalizations l10n) {
+  final exclusive = usbExclusivePlaybackStateNotifier.value;
+  // 独占直驱 DSD 时按 DoP/Native 呈现，而非 PCM（bitDepth=1 是 DSD 1-bit 流，
+  // format 形如 "dsf(DoP)"/"dff(Native)"）
+  if (exclusive.active && exclusive.bitDepth == 1) {
+    final mode = (exclusive.format ?? '').contains('Native') ? 'Native' : 'DoP';
+    return 'DSD ($mode)';
+  }
   final encoding = status.preferredEncoding ?? status.outputEncoding;
   if (encoding == null) return l10n.pcmSystemDefault;
   final bitDepth = _bitDepthLabel(status, l10n);
   return bitDepth == l10n.unknown ? encoding : 'PCM / $bitDepth';
+}
+
+String _bitPerfectStatusLabel(UsbAudioStatus status, AppLocalizations l10n) {
+  final exclusive = usbExclusivePlaybackStateNotifier.value;
+  // 独占直驱时反映独占真实位完美状态；非独占回退系统共享链路偏好
+  if (exclusive.active) {
+    return _exclusiveBitPerfect(exclusive)
+        ? l10n.bitPerfectDirect
+        : l10n.bitPerfectVolume;
+  }
+  return status.preferredBitPerfect
+      ? l10n.requested
+      : status.supported
+      ? l10n.notEnabled
+      : l10n.unavailable;
 }
 
 String _outputPortLabel(UsbAudioStatus status, AppLocalizations l10n) {
@@ -926,9 +967,11 @@ Color _chipColor(Color foreground) {
 Color _panelBackgroundColor(Color foreground) {
   final tint = _panelTintColor();
   final lightForeground = foreground.computeLuminance() > 0.45;
+  // 明暗基底从主题色（封面/歌词页背景）派生：保证足够对比的同时带上主题色调，
+  // 不再用中性灰硬编码
   final neutral = lightForeground
-      ? const Color(0xFF24252B)
-      : const Color(0xFFF0F0F2);
+      ? Color.lerp(tint, Colors.black, 0.82)!
+      : Color.lerp(tint, Colors.white, 0.86)!;
   return Color.alphaBlend(tint.withAlpha(lightForeground ? 96 : 136), neutral);
 }
 

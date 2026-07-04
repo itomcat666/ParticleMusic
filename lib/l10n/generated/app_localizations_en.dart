@@ -1010,6 +1010,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notEnabled => 'Not enabled';
 
   @override
+  String get bitPerfectDirect => 'Bit-perfect (direct)';
+
+  @override
+  String get bitPerfectVolume => 'Digital volume';
+
+  @override
   String get noUsbDacInfo =>
       'No USB DAC detected. Showing Android system output.';
 

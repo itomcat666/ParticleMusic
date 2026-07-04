@@ -984,6 +984,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get notEnabled => '未启用';
 
   @override
+  String get bitPerfectDirect => '位完美直通';
+
+  @override
+  String get bitPerfectVolume => '数字音量';
+
+  @override
   String get noUsbDacInfo => '未检测到 USB DAC。当前显示 Android 系统输出信息。';
 
   @override
